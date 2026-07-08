@@ -54,8 +54,15 @@ SOFTWARE.
         <HasRegisterProc Value="True"/>
         <UnitName Value="TextDropTarget"/>
       </Item>
+      <Item>
+        <Filename Value="gridprn.pas"/>
+        <UnitName Value="GridPrn"/>
+      </Item>
     </Files>
     <RequiredPkgs>
+      <Item>
+        <PackageName Value="Printer4Lazarus"/>
+      </Item>
       <Item>
         <PackageName Value="LCLBase"/>
       </Item>
