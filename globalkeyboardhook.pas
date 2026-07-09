@@ -69,8 +69,8 @@ type
     class var FActiveInstance: TGlobalKeyboardHook;
     class function HookProc(nCode: integer; wParam: WPARAM; lParam: LPARAM): LRESULT; stdcall; static;
     procedure InternalKeyboardEvent(wParam: WPARAM; const KBDLLHOOKSTRUCT: TKeyboardLLHookStruct; var Info: TKeyboardEventInfo);
-    procedure SetEnabled(AValue: boolean);
     {$ENDIF}
+    procedure SetEnabled(AValue: boolean);
   public
     constructor Create;
     destructor Destroy; override;

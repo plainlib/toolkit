@@ -91,6 +91,9 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+    {$IFDEF WINDOWS}
+    property SubTargets[Index: integer]: TWinControl read GetSubTarget;
+
     procedure ForceRegister;
     procedure Unregister;
 
@@ -99,7 +102,7 @@ type
     procedure RemoveSubTarget(AControl: TWinControl);
     procedure ClearSubTargets;
     function SubTargetCount: integer;
-    property SubTargets[Index: integer]: TWinControl read GetSubTarget;
+    {$ENDIF}
   published
     property Target: TCustomEdit read FTarget write SetTarget;
     property InsertText: boolean read FInsertText write SetInsertText default True;
