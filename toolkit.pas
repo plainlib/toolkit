@@ -8,7 +8,7 @@ unit toolkit;
 interface
 
 uses
-  GlobalKeyboardHook, GlobalMouseHook, OneShotTimer, TextDropTarget, GridPrn;
+  GlobalKeyboardHook, GlobalMouseHook, OneShotTimer, TextDropTarget, mathparser;
 
 implementation
 

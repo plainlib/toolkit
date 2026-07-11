@@ -55,14 +55,11 @@ SOFTWARE.
         <UnitName Value="TextDropTarget"/>
       </Item>
       <Item>
-        <Filename Value="gridprn.pas"/>
-        <UnitName Value="GridPrn"/>
+        <Filename Value="mathparser.pas"/>
+        <UnitName Value="mathparser"/>
       </Item>
     </Files>
     <RequiredPkgs>
-      <Item>
-        <PackageName Value="Printer4Lazarus"/>
-      </Item>
       <Item>
         <PackageName Value="LCLBase"/>
       </Item>
