@@ -19,6 +19,8 @@ type
   public
     class function MaxPrecision(const Expr: string): integer;
     class function Eval(const Expr: string): string;
+    class function CleanNumericExpression(Value: string): string;
+    class function CleanNumeric(Value: string): string;
   end;
 
 implementation
@@ -202,6 +204,53 @@ begin
     Result := FormatFloat(FormatStr, R);
   except
     Result := string.Empty; // Return empty string on any error
+  end;
+end;
+
+class function TMathParser.CleanNumericExpression(Value: string): string;
+var
+  i: integer;
+  C: char;
+const
+  UnicodeMinusUTF8 = #$E2#$88#$92;
+begin
+  Result := string.Empty;
+  Value := Value.Replace(UnicodeMinusUTF8, '-');
+  Value := Value.Replace('.', DefaultFormatSettings.DecimalSeparator);
+  Value := Value.Replace(',', DefaultFormatSettings.DecimalSeparator);
+  for i := 1 to Length(Value) do
+  begin
+    C := Value[i];
+    // allow digits and actions
+    if C in ['0'..'9', '-', '+', '*', '/', '%', '^', '(', ')', DefaultFormatSettings.DecimalSeparator] then
+      Result := Result + C;
+  end;
+end;
+
+class function TMathParser.CleanNumeric(Value: string): string;
+var
+  i: integer;
+  C: char;
+  ValTest: double;
+begin
+  Result := string.Empty;
+
+  // Clean if expression
+  Value := CleanNumericExpression(Value);
+
+  // If numeric then simple return result
+  if TryStrToFloat(Value, ValTest) then exit(Value);
+
+  // Try to evaluate as a mathematical expression first
+  Value := TMathParser.Eval(Value);
+
+  // After evaluation clean manually
+  for i := 1 to Length(Value) do
+  begin
+    C := Value[i];
+    // allow digits, ASCII minus, and dot
+    if C in ['0'..'9', '-', '.', ',', DefaultFormatSettings.DecimalSeparator] then
+      Result := Result + C;
   end;
 end;
 
