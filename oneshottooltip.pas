@@ -230,7 +230,8 @@ begin
   inherited Destroy;
 end;
 
-procedure TOneShotTooltip.ShowHintText(const AText: string; X, Y: integer; AWidth: integer; AHeight: integer; Duration: integer);
+procedure TOneShotTooltip.ShowHintText(const AText: string; X, Y: integer;
+  AWidth: integer; AHeight: integer; Duration: integer);
 var
   HtRect: TRect;
   MaxW, W, H: integer;
@@ -280,6 +281,16 @@ begin
     X := Screen.Width - W - 20;
   if Y = 0 then
     Y := Screen.WorkAreaHeight - H - 5;
+
+  // Keep the window inside the working area of the screen
+  if X < 0 then
+    X := 0
+  else if X + W > Screen.WorkAreaWidth then
+    X := Screen.WorkAreaWidth - W;
+  if Y < 0 then
+    Y := 0
+  else if Y + H > Screen.WorkAreaHeight then
+    Y := Screen.WorkAreaHeight - H;
 
   // Set size, text, then show
   FForm.SetBounds(X, Y, W, H);
