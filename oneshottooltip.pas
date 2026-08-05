@@ -24,15 +24,27 @@ uses
 type
   TOneShotTooltip = class;
 
-  // Internal hint form – a borderless, top‑most window with a read‑only Memo
+  // Internal hint form – a borderless, top‑most window with a read‑only Memo and resize grip
   TfrmHint = class(TForm)
   private
-    Memo1: TMemo;
+    FMemo: TMemo;
     FOwnerHint: TOneShotTooltip;
+    FGrip: TPanel;          // invisible resize grip in the lower‑right corner
+    FResizing: Boolean;
+    FResizeStartPos: TPoint; // screen coordinates of mouse at start
+    FResizeStartSize: TPoint; // form size at start (Width, Height)
     procedure FormDeactivate(Sender: TObject);
+    procedure GripMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+    procedure FormMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure FormResize(Sender: TObject);
+    procedure GripPaint(Sender: TObject);
+    procedure UpdateGripPosition; // recalculates grip placement
   public
     constructor Create(AOwner: TComponent); override;
-    property HintMemo: TMemo read Memo1;
+    property HintMemo: TMemo read FMemo;
   end;
 
   // Non‑visual component that owns and manages a hint form
@@ -40,7 +52,7 @@ type
   private
     FForm: TfrmHint;
     FTimer: TTimer;        // one‑shot timer for auto‑hide
-    FIsHiding: boolean;    // prevents re‑entrant hide calls
+    FIsHiding: Boolean;    // prevents re‑entrant hide calls
     procedure TimerHide;   // timer callback
     procedure HideHintInternal;
   public
@@ -50,17 +62,24 @@ type
     // Duration = 0  : hint stays until the user clicks outside it
     // Duration > 0  : hint hides after Duration ms (or on outside click)
     // AWidth, AHeight : custom size; 0 means auto‑calculate
-    procedure ShowHintText(const AText: string; X, Y: integer;
-      AWidth: integer = 0; AHeight: integer = 0; Duration: integer = 0);
+    procedure ShowHintText(const AText: string; X, Y: Integer;
+      AWidth: Integer = 0; AHeight: Integer = 0; Duration: Integer = 0);
   end;
 
 implementation
+
+const
+  GRIP_SIZE = 16;       // side length of the resize grip square
+  GRIP_MARGIN = 2;      // distance from form edges
 
 { TfrmHint }
 
 constructor TfrmHint.Create(AOwner: TComponent);
 begin
-  inherited CreateNew(AOwner);
+  // We inherit from TForm but have no LFM resource.
+  // The host temporarily disables RequireDerivedFormResource before creating us.
+  inherited Create(AOwner);
+
   // Form properties: no border, always on top, manually positioned
   BorderStyle := bsNone;
   FormStyle := fsSystemStayOnTop;
@@ -68,18 +87,49 @@ begin
   ShowHint := False;
 
   // Memo for displaying the hint text
-  Memo1 := TMemo.Create(Self);
-  Memo1.Parent := Self;
-  Memo1.Align := alClient;
-  Memo1.BorderStyle := bsNone;
-  Memo1.ReadOnly := True;
-  Memo1.Color := clInfoBk;               // standard hint background colour
-  Memo1.Font.Assign(Screen.HintFont);    // standard hint font
-  Memo1.WordWrap := True;
-  Memo1.ScrollBars := ssNone;            // no scrollbars for a clean look
-  Memo1.TabStop := False;
+  FMemo := TMemo.Create(Self);
+  FMemo.Parent := Self;
+  FMemo.Align := alClient;
+  FMemo.BorderStyle := bsNone;
+  FMemo.ReadOnly := True;
+  FMemo.Color := clInfoBk;               // standard hint background colour
+  FMemo.Font.Assign(Screen.HintFont);    // standard hint font
+  FMemo.WordWrap := True;
+  FMemo.ScrollBars := ssNone;            // no scrollbars for a clean look
+  FMemo.TabStop := False;
 
+  // Create an invisible resize grip
+  FGrip := TPanel.Create(Self);
+  FGrip.Parent := Self;
+  FGrip.Width := GRIP_SIZE;
+  FGrip.Height := GRIP_SIZE;
+  FGrip.BevelOuter := bvNone;
+  FGrip.Color := clInfoBk;               // blend with background
+  FGrip.Cursor := crSizeNWSE;
+  FGrip.ShowHint := False;
+  FGrip.TabStop := False;
+  FGrip.OnMouseDown := @GripMouseDown;
+  FGrip.OnPaint := @GripPaint;           // draw diagonal lines for visual cue
+
+  FResizing := False;
+
+  // Form-level mouse handlers for resize tracking
+  OnMouseMove := @FormMouseMove;
+  OnMouseUp := @FormMouseUp;
   OnDeactivate := @FormDeactivate;
+  OnResize := @FormResize;               // keep grip in corner when size changes
+end;
+
+procedure TfrmHint.UpdateGripPosition;
+begin
+  // Place the grip in the bottom‑right corner with a small margin
+  FGrip.Left := ClientWidth - GRIP_SIZE - GRIP_MARGIN;
+  FGrip.Top  := ClientHeight - GRIP_SIZE - GRIP_MARGIN;
+end;
+
+procedure TfrmHint.FormResize(Sender: TObject);
+begin
+  UpdateGripPosition;
 end;
 
 procedure TfrmHint.FormDeactivate(Sender: TObject);
@@ -89,12 +139,87 @@ begin
     FOwnerHint.HideHintInternal;
 end;
 
+procedure TfrmHint.GripMouseDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+begin
+  if Button = mbLeft then
+  begin
+    FResizing := True;
+    // Record starting position (screen coordinates) and current client size
+    FResizeStartPos := Mouse.CursorPos;
+    FResizeStartSize := Point(ClientWidth, ClientHeight);
+    // Capture all mouse events to this form until mouse up
+    Self.MouseCapture := True;
+  end;
+end;
+
+procedure TfrmHint.FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+var
+  NewPos: TPoint;
+  Delta: TPoint;
+  NewW, NewH: Integer;
+begin
+  if FResizing then
+  begin
+    NewPos := Mouse.CursorPos;
+    Delta.X := NewPos.X - FResizeStartPos.X;
+    Delta.Y := NewPos.Y - FResizeStartPos.Y;
+    NewW := FResizeStartSize.X + Delta.X;
+    NewH := FResizeStartSize.Y + Delta.Y;
+    // Enforce reasonable minimum size
+    if NewW < 100 then
+      NewW := 100;
+    if NewH < 20 then
+      NewH := 20;
+    SetBounds(Left, Top, NewW, NewH);
+    // UpdateGripPosition is called automatically via OnResize
+  end;
+end;
+
+procedure TfrmHint.FormMouseUp(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+begin
+  if FResizing and (Button = mbLeft) then
+  begin
+    FResizing := False;
+    Self.MouseCapture := False; // release capture back to normal
+  end;
+end;
+
+procedure TfrmHint.GripPaint(Sender: TObject);
+// Paints three small diagonal lines in the bottom-right corner
+const
+  LINE_OFFSET = 4;
+var
+  i: Integer;
+begin
+  with TPanel(Sender).Canvas do
+  begin
+    Pen.Color := clBtnShadow;
+    Pen.Width := 1;
+    for i := 0 to 2 do
+    begin
+      MoveTo(GRIP_SIZE - LINE_OFFSET, LINE_OFFSET + i * 4);
+      LineTo(LINE_OFFSET + i * 4, GRIP_SIZE - LINE_OFFSET);
+    end;
+  end;
+end;
+
 { TOneShotTooltip }
 
 constructor TOneShotTooltip.Create(AOwner: TComponent);
+var
+  OldRequire: Boolean;
 begin
   inherited Create(AOwner);
-  FForm := TfrmHint.Create(nil); // we manage the form's lifetime manually
+  // Temporarily allow creating a form without a corresponding resource file
+  OldRequire := RequireDerivedFormResource;
+  RequireDerivedFormResource := False;
+  try
+    FForm := TfrmHint.Create(nil);
+  finally
+    RequireDerivedFormResource := OldRequire;
+  end;
   FForm.FOwnerHint := Self;
   FTimer := nil;
   FIsHiding := False;
@@ -107,11 +232,11 @@ begin
   inherited Destroy;
 end;
 
-procedure TOneShotTooltip.ShowHintText(const AText: string; X, Y: integer;
-  AWidth: integer; AHeight: integer; Duration: integer);
+procedure TOneShotTooltip.ShowHintText(const AText: string; X, Y: Integer;
+  AWidth: Integer; AHeight: Integer; Duration: Integer);
 var
   HtRect: TRect;
-  MaxW, W, H: integer;
+  MaxW, W, H: Integer;
   HintHelper: THintWindow;
 begin
   // Cancel any pending timer
@@ -153,7 +278,7 @@ begin
   if AHeight > 0 then
     H := AHeight;
 
-  // Default positioning (bottom‑right corner with a small margin)
+  // Default positioning (bottom-right corner with a small margin)
   if X = 0 then
     X := Screen.Width - W - 20;
   if Y = 0 then
@@ -162,6 +287,10 @@ begin
   // Set size, text, then show
   FForm.SetBounds(X, Y, W, H);
   FForm.HintMemo.Text := AText;   // safe: Handle exists after HandleNeeded
+
+  // Ensure grip is positioned correctly after the first resize
+  FForm.UpdateGripPosition;
+  FForm.FGrip.BringToFront;       // stay above the memo
 
   FForm.Show;
   FForm.BringToFront;

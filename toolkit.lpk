@@ -11,6 +11,11 @@
       <SearchPaths>
         <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
+      <Other>
+        <CompilerMessages>
+          <IgnoredMessages idx5024="True"/>
+        </CompilerMessages>
+      </Other>
     </CompilerOptions>
     <Description Value="Collection of reusable components, infrastructure modules, and system utilities."/>
     <License Value="MIT License
@@ -64,7 +69,7 @@ SOFTWARE.
       </Item>
       <Item>
         <Filename Value="oneshottooltip.pas"/>
-        <UnitName Value="oneshottooltip"/>
+        <UnitName Value="OneShotTooltip"/>
       </Item>
     </Files>
     <RequiredPkgs>
