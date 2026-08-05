@@ -60,7 +60,11 @@ SOFTWARE.
       </Item>
       <Item>
         <Filename Value="oneshothint.pas"/>
-        <UnitName Value="oneshothint"/>
+        <UnitName Value="OneShotHint"/>
+      </Item>
+      <Item>
+        <Filename Value="oneshottooltip.pas"/>
+        <UnitName Value="oneshottooltip"/>
       </Item>
     </Files>
     <RequiredPkgs>

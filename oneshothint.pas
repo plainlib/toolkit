@@ -25,16 +25,19 @@ type
   private
     FTimer: TTimer;          // one-shot timer for auto-hide
     FHideByClick: boolean;   // if True, hide only by clicking the window
-    procedure DoHideHint;    // callback for timer and click
-    procedure HandleClick(Sender: TObject);
+    procedure DoHideHint;    // callback for timer
+    procedure MouseDownOutside(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure HideHintInternal; // common cleanup and hide
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     // Show hint text at specified position.
     // Duration = 0  : hint stays until clicked
     // Duration > 0  : hint hides after Duration ms
-    // The method safely cancels any previous pending timer.
-    procedure ShowHintText(const AText: string; X, Y: integer; Duration: integer = 0);
+    // AWidth, AHeight : custom size; 0 means auto-calculate
+    procedure ShowHintText(const AText: string; X, Y: integer;
+      AWidth: integer = 0; AHeight: integer = 0; Duration: integer = 0);
   end;
 
 implementation
@@ -46,8 +49,8 @@ begin
   inherited Create(AOwner);
   FTimer := nil;
   FHideByClick := False;
-  // Hide window when user clicks on it
-  Self.OnClick := @HandleClick;
+  // Single mouse handler for both inside and outside clicks
+  Self.OnMouseDown := @MouseDownOutside;
 end;
 
 destructor TOneShotHint.Destroy;
@@ -57,19 +60,22 @@ begin
   inherited Destroy;
 end;
 
-procedure TOneShotHint.ShowHintText(const AText: string; X, Y: integer; Duration: integer);
+procedure TOneShotHint.ShowHintText(const AText: string; X, Y: integer;
+  AWidth: integer; AHeight: integer; Duration: integer);
 var
   HtRect: TRect;
   DisplayPos: TPoint;
+  MaxW: integer;
 begin
   // Cancel any previously scheduled hide
   ClearTimeout(FTimer);
-  // Hide current hint if it is still visible
+  // Hide current hint if it is still visible (and release capture if any)
+  Self.MouseCapture := False;
   ReleaseHandle;
 
   if Duration = 0 then
   begin
-    // No timer – hide on click only
+    // No timer – hide on click only (inside or outside)
     FHideByClick := True;
   end
   else
@@ -79,8 +85,24 @@ begin
     SetTimeoutSafe(FTimer, Duration, @DoHideHint);
   end;
 
-  // Calculate size and position
-  HtRect := CalcHintRect(Screen.Width, AText, nil);
+  // Determine maximum width for text calculation
+  if AWidth <= 0 then
+    MaxW := Screen.Width
+  else
+    MaxW := AWidth;
+
+  // Calculate initial rectangle based on text
+  HtRect := CalcHintRect(MaxW, AText, nil);
+
+  // Apply custom width if specified
+  if AWidth > 0 then
+    HtRect.Right := HtRect.Left + AWidth;
+
+  // Apply custom height if specified
+  if AHeight > 0 then
+    HtRect.Bottom := HtRect.Top + AHeight;
+
+  // Default positioning (bottom-right corner with small margin)
   DisplayPos.X := X;
   DisplayPos.Y := Y;
   if X = 0 then
@@ -90,22 +112,34 @@ begin
   OffsetRect(HtRect, DisplayPos.X, DisplayPos.Y);
 
   ActivateHint(HtRect, AText);
+  // Capture all mouse events so we can detect clicks outside
+  Self.MouseCapture := True;
 end;
 
 procedure TOneShotHint.DoHideHint;
 begin
-  // The timer already nilled FTimer, we just need to hide
-  ReleaseHandle;
+  // Timer fired – hide and release capture
+  HideHintInternal;
 end;
 
-procedure TOneShotHint.HandleClick(Sender: TObject);
+procedure TOneShotHint.MouseDownOutside(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
 begin
-  if FHideByClick then
-  begin
-    // Cancel timer if one is somehow still active (safety)
-    ClearTimeout(FTimer);
-    ReleaseHandle;
-  end;
+  // Coordinates are relative to our client area
+  if (X < 0) or (X >= ClientWidth) or (Y < 0) or (Y >= ClientHeight) then
+    // Click outside – always hide
+    HideHintInternal
+  else if FHideByClick then
+    // Click inside and hint is in "click-to-hide" mode
+    HideHintInternal;
+  // Otherwise (inside click with Duration>0) do nothing – timer will hide it later
+end;
+
+procedure TOneShotHint.HideHintInternal;
+begin
+  ClearTimeout(FTimer);      // cancel timer if any
+  Self.MouseCapture := False; // release capture
+  ReleaseHandle;             // hide the hint window
 end;
 
 end.
