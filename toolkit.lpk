@@ -58,6 +58,10 @@ SOFTWARE.
         <Filename Value="mathparser.pas"/>
         <UnitName Value="mathparser"/>
       </Item>
+      <Item>
+        <Filename Value="oneshothint.pas"/>
+        <UnitName Value="oneshothint"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
