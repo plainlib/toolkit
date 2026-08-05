@@ -19,26 +19,26 @@ uses
   ExtCtrls,
   Graphics,
   Types,
+  LCLIntf,
+  LCLType,
   OneShotTimer;
 
 type
   TOneShotTooltip = class;
 
-  // Internal hint form – a borderless, top‑most window with a read‑only Memo and resize grip
+  // Internal hint form – a borderless, top-most window with a read-only Memo and resize grip
   TfrmHint = class(TForm)
   private
     FMemo: TMemo;
     FOwnerHint: TOneShotTooltip;
-    FGrip: TPanel;          // invisible resize grip in the lower‑right corner
-    FResizing: Boolean;
+    FGrip: TPanel;          // invisible resize grip in the lower-right corner
+    FResizing: boolean;
     FResizeStartPos: TPoint; // screen coordinates of mouse at start
     FResizeStartSize: TPoint; // form size at start (Width, Height)
     procedure FormDeactivate(Sender: TObject);
-    procedure GripMouseDown(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Integer);
-    procedure FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
-    procedure FormMouseUp(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Integer);
+    procedure GripMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
+    procedure FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: integer);
+    procedure FormMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
     procedure FormResize(Sender: TObject);
     procedure GripPaint(Sender: TObject);
     procedure UpdateGripPosition; // recalculates grip placement
@@ -47,12 +47,12 @@ type
     property HintMemo: TMemo read FMemo;
   end;
 
-  // Non‑visual component that owns and manages a hint form
+  // Non-visual component that owns and manages a hint form
   TOneShotTooltip = class(TComponent)
   private
     FForm: TfrmHint;
-    FTimer: TTimer;        // one‑shot timer for auto‑hide
-    FIsHiding: Boolean;    // prevents re‑entrant hide calls
+    FTimer: TTimer;        // one-shot timer for auto-hide
+    FIsHiding: boolean;    // prevents re-entrant hide calls
     procedure TimerHide;   // timer callback
     procedure HideHintInternal;
   public
@@ -61,18 +61,18 @@ type
     // Show hint text at specified position.
     // Duration = 0  : hint stays until the user clicks outside it
     // Duration > 0  : hint hides after Duration ms (or on outside click)
-    // AWidth, AHeight : custom size; 0 means auto‑calculate
-    procedure ShowHintText(const AText: string; X, Y: Integer;
-      AWidth: Integer = 0; AHeight: Integer = 0; Duration: Integer = 0);
+    // AWidth, AHeight : custom size; 0 means auto-calculate
+    procedure ShowHintText(const AText: string; X, Y: integer; AWidth: integer = 0; AHeight: integer = 0; Duration: integer = 0);
   end;
 
 implementation
 
 const
   GRIP_SIZE = 16;       // side length of the resize grip square
-  GRIP_MARGIN = 2;      // distance from form edges
+  GRIP_MARGIN_RIGHT = 2;      // distance from form edges
+  GRIP_MARGIN_BOTTOM = 2;      // distance from form edges
 
-{ TfrmHint }
+  { TfrmHint }
 
 constructor TfrmHint.Create(AOwner: TComponent);
 begin
@@ -95,7 +95,7 @@ begin
   FMemo.Color := clInfoBk;               // standard hint background colour
   FMemo.Font.Assign(Screen.HintFont);    // standard hint font
   FMemo.WordWrap := True;
-  FMemo.ScrollBars := ssNone;            // no scrollbars for a clean look
+  FMemo.ScrollBars := ssVertical;            // no scrollbars for a clean look
   FMemo.TabStop := False;
 
   // Create an invisible resize grip
@@ -122,9 +122,9 @@ end;
 
 procedure TfrmHint.UpdateGripPosition;
 begin
-  // Place the grip in the bottom‑right corner with a small margin
-  FGrip.Left := ClientWidth - GRIP_SIZE - GRIP_MARGIN;
-  FGrip.Top  := ClientHeight - GRIP_SIZE - GRIP_MARGIN;
+  // Place the grip in the bottom-right corner with a small margin
+  FGrip.Left := ClientWidth - GRIP_SIZE - GRIP_MARGIN_RIGHT - GetSystemMetrics(SM_CXVSCROLL);
+  FGrip.Top := ClientHeight - GRIP_SIZE - GRIP_MARGIN_BOTTOM;
 end;
 
 procedure TfrmHint.FormResize(Sender: TObject);
@@ -139,8 +139,7 @@ begin
     FOwnerHint.HideHintInternal;
 end;
 
-procedure TfrmHint.GripMouseDown(Sender: TObject; Button: TMouseButton;
-  Shift: TShiftState; X, Y: Integer);
+procedure TfrmHint.GripMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
 begin
   if Button = mbLeft then
   begin
@@ -153,11 +152,11 @@ begin
   end;
 end;
 
-procedure TfrmHint.FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+procedure TfrmHint.FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: integer);
 var
   NewPos: TPoint;
   Delta: TPoint;
-  NewW, NewH: Integer;
+  NewW, NewH: integer;
 begin
   if FResizing then
   begin
@@ -176,8 +175,7 @@ begin
   end;
 end;
 
-procedure TfrmHint.FormMouseUp(Sender: TObject; Button: TMouseButton;
-  Shift: TShiftState; X, Y: Integer);
+procedure TfrmHint.FormMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
 begin
   if FResizing and (Button = mbLeft) then
   begin
@@ -191,7 +189,7 @@ procedure TfrmHint.GripPaint(Sender: TObject);
 const
   LINE_OFFSET = 4;
 var
-  i: Integer;
+  i: integer;
 begin
   with TPanel(Sender).Canvas do
   begin
@@ -209,7 +207,7 @@ end;
 
 constructor TOneShotTooltip.Create(AOwner: TComponent);
 var
-  OldRequire: Boolean;
+  OldRequire: boolean;
 begin
   inherited Create(AOwner);
   // Temporarily allow creating a form without a corresponding resource file
@@ -232,11 +230,10 @@ begin
   inherited Destroy;
 end;
 
-procedure TOneShotTooltip.ShowHintText(const AText: string; X, Y: Integer;
-  AWidth: Integer; AHeight: Integer; Duration: Integer);
+procedure TOneShotTooltip.ShowHintText(const AText: string; X, Y: integer; AWidth: integer; AHeight: integer; Duration: integer);
 var
   HtRect: TRect;
-  MaxW, W, H: Integer;
+  MaxW, W, H: integer;
   HintHelper: THintWindow;
 begin
   // Cancel any pending timer
@@ -301,7 +298,7 @@ end;
 
 procedure TOneShotTooltip.TimerHide;
 begin
-  // Called when the one‑shot timer fires – simply hide the hint
+  // Called when the one-shot timer fires – simply hide the hint
   HideHintInternal;
 end;
 
@@ -313,7 +310,7 @@ begin
     ClearTimeout(FTimer);                     // cancel any pending timer
     if Assigned(FForm) then
     begin
-      // Detach deactivate handler so hiding won't re‑trigger it
+      // Detach deactivate handler so hiding won't re-trigger it
       FForm.OnDeactivate := nil;
       try
         if FForm.Visible then
