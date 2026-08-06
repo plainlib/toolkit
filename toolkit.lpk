@@ -71,6 +71,10 @@ SOFTWARE.
         <Filename Value="oneshottooltip.pas"/>
         <UnitName Value="OneShotTooltip"/>
       </Item>
+      <Item>
+        <Filename Value="flatbutton.pas"/>
+        <UnitName Value="flatbutton"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
