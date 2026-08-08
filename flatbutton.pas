@@ -10,15 +10,15 @@ uses
 type
   TFlatButton = class(TSpeedButton)
   private
-    FOffsetY: Integer;
-    procedure SetOffsetY(AValue: Integer);
+    FOffsetY: integer;
+    procedure SetOffsetY(AValue: integer);
   protected
     procedure Paint; override;
   public
     constructor Create(AOwner: TComponent); override;
   published
     // Vertical offset for the caption relative to the icon center (0 = default centered)
-    property OffsetY: Integer read FOffsetY write SetOffsetY default 0;
+    property OffsetY: integer read FOffsetY write SetOffsetY default 0;
   end;
 
 implementation
@@ -30,7 +30,7 @@ begin
   Flat := True; // Always draw as a flat button
 end;
 
-procedure TFlatButton.SetOffsetY(AValue: Integer);
+procedure TFlatButton.SetOffsetY(AValue: integer);
 begin
   if FOffsetY = AValue then Exit;
   FOffsetY := AValue;
@@ -44,7 +44,10 @@ var
   ts: TTextStyle;
   Details: TThemedElementDetails;
   imgW, imgH: Integer;
+  textWidth, totalWidth, xStart: Integer;
+  gap: Integer;
 begin
+  gap := 4;
   // Toolbar theme elements give the native flat look
   if Down then
     Details := ThemeServices.GetElementDetails(ttbButtonPressed)
@@ -73,29 +76,55 @@ begin
     imgH := 0;
   end;
 
+  // Calculate total content width
+  Canvas.Font.Assign(Font);
+  textWidth := Canvas.TextWidth(Caption);
+  if imgW > 0 then
+    totalWidth := imgW + gap + textWidth
+  else
+    totalWidth := textWidth;
+
+  // Horizontal alignment of the whole icon+text block
+  case Alignment of
+    taRightJustify:
+      xStart := ClientWidth - totalWidth - gap;
+    taCenter:
+      begin
+        xStart := (ClientWidth - totalWidth) div 2;
+        if xStart < gap then
+          xStart := gap;
+      end;
+  else // taLeftJustify
+    xStart := gap;
+  end;
+
   // Draw the icon vertically centered
   if imgW > 0 then
   begin
-    xIcon := 2;  // left padding
-    yIcon := (ClientRect.Height - imgH) div 2;
+    xIcon := xStart;
+    yIcon := (ClientHeight - imgH) div 2;
     if (ImageIndex >= 0) and (Images <> nil) then
       Images.Draw(Canvas, xIcon, yIcon, ImageIndex, Enabled)
     else if (Glyph <> nil) and (not Glyph.Empty) then
       Canvas.Draw(xIcon, yIcon, Glyph);
-    xText := xIcon + imgW + 4; // gap between icon and text
+    xText := xIcon + imgW + gap;
   end
   else
-    xText := 4; // no icon
+    xText := xStart;
 
   // Caption rectangle shifted vertically by OffsetY
-  r := Rect(xText, FOffsetY, ClientRect.Width - 4, ClientRect.Height + FOffsetY);
-
-  // Preserve the button's font settings
-  Canvas.Font.Assign(Font);
+  case Alignment of
+    taRightJustify:
+      r := Rect(xText, FOffsetY, ClientWidth - gap, ClientHeight + FOffsetY);
+    taCenter:
+      r := Rect(xText, FOffsetY, ClientWidth - xStart, ClientHeight + FOffsetY);
+  else // taLeftJustify
+    r := Rect(xText, FOffsetY, ClientWidth - gap, ClientHeight + FOffsetY);
+  end;
 
   // Draw caption centered vertically inside the shifted rectangle
   ts := Canvas.TextStyle;
-  ts.Alignment := taLeftJustify;
+  ts.Alignment := taLeftJustify; // text always left-aligned inside its rect
   ts.Layout := tlCenter;
   Canvas.TextRect(r, r.Left, r.Top, Caption, ts);
 end;
