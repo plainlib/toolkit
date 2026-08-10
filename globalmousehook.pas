@@ -118,7 +118,7 @@ end;
 function TGlobalMouseHook.IsInputWindow(Wnd: THandle): Boolean;
 const
   // Classes that we always ignore (blacklist)
-  IgnoredClasses: array[0..13] of PChar = (
+  IgnoredClasses: array[0..15] of PChar = (
     'ComboLBox',          // popup list of a ComboBox
     'ScrollBar',          // standard scrollbar
     'msctls_updown32',    // up-down (spin) control
@@ -132,7 +132,9 @@ const
     'SysListView32',      // classic file list in Explorer
     'DirectUIHWND',       // modern Explorer file view (Vista+)
     'CtrlNotifySink',     // sometimes used in Explorer details pane
-    'Shell DocObject View'// embedded Explorer views
+    'Shell DocObject View', // embedded Explorer views
+    'ConsoleWindowClass', // classic console (cmd, old PowerShell)
+    'CASCADIA_HOSTING_WINDOW_CLASS' // Windows Terminal
   );
 
   // Virtual machine window classes – fast preliminary check
@@ -162,6 +164,15 @@ const
     'virtualboxvm.exe',
     'vboxheadless.exe',
     'vmware-vmx.exe'
+  );
+
+  // Console process names – mouse events inside these windows are ignored
+  ConsoleProcessNames: array[0..4] of string = (
+    'conhost.exe',
+    'cmd.exe',
+    'powershell.exe',
+    'pwsh.exe',
+    'windowsterminal.exe'
   );
 
 type
@@ -211,6 +222,49 @@ var
           ext := LowerCase(string(nameStr));
         for k := Low(VMProcessNames) to High(VMProcessNames) do
           if ext = VMProcessNames[k] then
+            Exit(True);
+      end;
+    finally
+      CloseHandle(hP);
+    end;
+  end;
+
+  // Returns True if the window belongs to a console host process
+  function IsConsoleProcess(Wnd: THandle): Boolean;
+  var
+    pidLocal: DWORD;
+    hP: THandle;
+    fname: array[0..MAX_PATH] of WideChar;
+    fLen: DWORD;
+    nameStr: WideString;
+    k: Integer;
+    ext: string;
+    QueryFull: TQueryFullProcessImageNameW;
+    hKernel32: THandle;
+  begin
+    Result := False;
+    hKernel32 := GetModuleHandle('kernel32.dll');
+    if hKernel32 <> 0 then
+      Pointer(QueryFull) := GetProcAddress(hKernel32, 'QueryFullProcessImageNameW')
+    else
+      Pointer(QueryFull) := nil;
+    if not Assigned(QueryFull) then Exit;
+
+    GetWindowThreadProcessId(HWND(Wnd), @pidLocal);
+    hP := OpenProcess(PROCESS_QUERY_INFORMATION, False, pidLocal);
+    if hP = 0 then Exit;
+    try
+      fLen := MAX_PATH;
+      if QueryFull(hP, 0, @fname[0], @fLen) then
+      begin
+        SetString(nameStr, PWideChar(@fname[0]), fLen);
+        k := LastDelimiter('\', string(nameStr));
+        if k > 0 then
+          ext := LowerCase(Copy(string(nameStr), k + 1, MaxInt))
+        else
+          ext := LowerCase(string(nameStr));
+        for k := Low(ConsoleProcessNames) to High(ConsoleProcessNames) do
+          if ext = ConsoleProcessNames[k] then
             Exit(True);
       end;
     finally
@@ -276,6 +330,13 @@ begin
           Exit(False);
       end;
 
+       // c) Reject windows owned by console processes (cmd, powershell, terminal)
+      if Assigned(QueryFull) then
+      begin
+        if IsConsoleProcess(Wnd) then
+          Exit(False);
+      end;
+
       // All remaining windows are valid input targets
       Exit(True);
     end;
@@ -312,6 +373,10 @@ begin
 
       // b) Reject VM processes
       if WindowBelongsToVM(Wnd) then
+        Exit(False);
+
+      // c) Reject windows owned by console processes (cmd, powershell, terminal)
+      if IsConsoleProcess(Wnd) then
         Exit(False);
 
       // c) If the window belongs to none of the above, try EM_GETSEL
