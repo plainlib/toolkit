@@ -555,8 +555,25 @@ end;
 
 function TTextDropTargetImpl.DragOver(grfKeyState: DWORD; pt: TPoint;
   var dwEffect: DWORD): HRESULT; stdcall;
+var
+  ClientPt: TPoint;
+  CharIdx: LResult;
 begin
   dwEffect := DROPEFFECT_COPY;
+
+  // Update caret position if text insertion is enabled and target is valid
+  if FOwner.InsertText and Assigned(FEdit) and FEdit.HandleAllocated then
+  begin
+    // Give focus to the editor so that the caret becomes visible
+    if FEdit.CanFocus then
+      FEdit.SetFocus;
+    ClientPt := FEdit.ScreenToClient(pt);
+    CharIdx := SendMessage(FEdit.Handle, EM_CHARFROMPOS, 0,
+      MakeLParam(ClientPt.X, ClientPt.Y));
+    // Place the caret without selecting any text
+    SendMessage(FEdit.Handle, EM_SETSEL, LoWord(CharIdx), LoWord(CharIdx));
+  end;
+
   Result := S_OK;
 end;
 
@@ -627,8 +644,25 @@ end;
 
 function TTextDropTargetSubImpl.DragOver(grfKeyState: DWORD; pt: TPoint;
   var dwEffect: DWORD): HRESULT; stdcall;
+var
+  ClientPt: TPoint;
+  CharIdx: LResult;
 begin
   dwEffect := DROPEFFECT_COPY;
+
+  // Update caret position in the primary target if available
+  if FOwner.InsertText and Assigned(FOwner.FTarget) and
+     FOwner.FTarget.HandleAllocated then
+  begin
+     // Give focus to the primary editor so that the caret becomes visible
+    if FOwner.FTarget.CanFocus then
+      FOwner.FTarget.SetFocus;
+    ClientPt := FOwner.FTarget.ScreenToClient(pt);
+    CharIdx := SendMessage(FOwner.FTarget.Handle, EM_CHARFROMPOS, 0,
+      MakeLParam(ClientPt.X, ClientPt.Y));
+    SendMessage(FOwner.FTarget.Handle, EM_SETSEL, LoWord(CharIdx), LoWord(CharIdx));
+  end;
+
   Result := S_OK;
 end;
 
