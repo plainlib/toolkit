@@ -9,7 +9,7 @@ interface
 
 uses
   GlobalKeyboardHook, GlobalMouseHook, OneShotTimer, TextDropTarget, 
-  mathparser, OneShotHint, OneShotTooltip, flatbutton;
+  mathparser, OneShotHint, OneShotTooltip, flatbutton, appinstance;
 
 implementation
 

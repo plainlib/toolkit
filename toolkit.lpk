@@ -75,6 +75,10 @@ SOFTWARE.
         <Filename Value="flatbutton.pas"/>
         <UnitName Value="flatbutton"/>
       </Item>
+      <Item>
+        <Filename Value="appinstance.pas"/>
+        <UnitName Value="appinstance"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
