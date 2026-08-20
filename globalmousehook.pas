@@ -89,36 +89,48 @@ const
 implementation
 
 {$IFDEF WINDOWS}
-class function TGlobalMouseHook.HookProc(nCode: Integer; wParam: WPARAM; lParam: LPARAM): LRESULT; stdcall;
+
+class function TGlobalMouseHook.HookProc(nCode: integer; wParam: WPARAM; lParam: LPARAM): LRESULT; stdcall;
 var
   p: PMouseLLHookStruct;
+  Instance: TGlobalMouseHook;   // Local copy of active instance
+  Hook: HHOOK;                  // Local copy of hook handle
 begin
-  if (nCode >= 0) and (FActiveInstance <> nil) then
+  // Cache class-level values once per call
+  Instance := FActiveInstance;
+  if Instance = nil then
+  begin
+    // No active hook instance, just pass through
+    Result := CallNextHookEx(0, nCode, wParam, lParam);
+    Exit;
+  end;
+
+  // Cache the hook handle from the instance
+  Hook := Instance.FHook;
+
+  if nCode >= 0 then
   begin
     // Forward only button-down/up messages to our handler; ignore everything else
     case wParam of
       WM_LBUTTONDOWN, WM_LBUTTONUP,
       WM_RBUTTONDOWN, WM_RBUTTONUP,
       WM_MBUTTONDOWN, WM_MBUTTONUP:
-        begin
-          p := PMouseLLHookStruct(Pointer(PtrUInt(lParam)));
-          FActiveInstance.InternalMouseEvent(wParam, p^);
-        end;
+      begin
+        p := PMouseLLHookStruct(Pointer(PtrUInt(lParam)));
+        Instance.InternalMouseEvent(wParam, p^);
+      end;
       // all other messages (move, wheel, etc.) are passed through without any processing
     end;
   end;
 
   // Always call the next hook in the chain
-  if FActiveInstance <> nil then
-    Result := CallNextHookEx(FActiveInstance.FHook, nCode, wParam, lParam)
-  else
-    Result := CallNextHookEx(0, nCode, wParam, lParam);
+  Result := CallNextHookEx(Hook, nCode, wParam, lParam);
 end;
 
-function TGlobalMouseHook.IsInputWindow(Wnd: THandle): Boolean;
+function TGlobalMouseHook.IsInputWindow(Wnd: THandle): boolean;
 const
   // Classes that we always ignore (blacklist)
-  IgnoredClasses: array[0..15] of PChar = (
+  IgnoredClasses: array[0..15] of pchar = (
     'ComboLBox',          // popup list of a ComboBox
     'ScrollBar',          // standard scrollbar
     'msctls_updown32',    // up-down (spin) control
@@ -135,16 +147,16 @@ const
     'Shell DocObject View', // embedded Explorer views
     'ConsoleWindowClass', // classic console (cmd, old PowerShell)
     'CASCADIA_HOSTING_WINDOW_CLASS' // Windows Terminal
-  );
+    );
 
   // Virtual machine window classes – fast preliminary check
-  VMWindowClasses: array[0..1] of PChar = (
+  VMWindowClasses: array[0..1] of pchar = (
     'QWidget',            // VirtualBox (older) / Qt main window
     'VMwareUnityHostWnd'  // VMware Workstation/Player
-  );
+    );
 
   // Classes that are treated as text editing fields (whitelist)
-  TextEditClasses: array[0..11] of PChar = (
+  TextEditClasses: array[0..11] of pchar = (
     'Edit',                         // standard edit control
     'RichEdit20A',                  // RichEdit version 2.0 (ANSI)
     'RichEdit50W',                  // RichEdit version 5.0 (Unicode)
@@ -157,14 +169,14 @@ const
     'OperaWindowClass',             // older Opera
     'Windows.UI.Core.CoreWindow',   // UWP / WinRT text controls
     'Afx:FrameOrView:100'           // MFC-based applications
-  );
+    );
 
   // Process names of known virtual machines and emulators
   VMProcessNames: array[0..2] of string = (
     'virtualboxvm.exe',
     'vboxheadless.exe',
     'vmware-vmx.exe'
-  );
+    );
 
   // Console process names – mouse events inside these windows are ignored
   ConsoleProcessNames: array[0..4] of string = (
@@ -173,36 +185,34 @@ const
     'powershell.exe',
     'pwsh.exe',
     'windowsterminal.exe'
-  );
-
+    );
 type
-  TQueryFullProcessImageNameW = function(hProcess: THandle; dwFlags: DWORD;
-    lpExeName: PWideChar; lpdwSize: LPDWORD): BOOL; stdcall;
+  TQueryFullProcessImageNameW = function(hProcess: THandle; dwFlags: DWORD; lpExeName: pwidechar; lpdwSize: LPDWORD): BOOL; stdcall;
 var
-  szClass: array[0..255] of Char;
-  i: Integer;
+  szClass: array[0..255] of char;
+  i: integer;
   pid: DWORD;
   hProc: THandle;
-  fileName: array[0..MAX_PATH] of WideChar;
+  fileName: array[0..MAX_PATH] of widechar;
   len: DWORD;
-  s: WideString;
-  j: Integer;
+  s: widestring;
+  j: integer;
   dwStart, dwEnd: DWORD;
   QueryFull: TQueryFullProcessImageNameW;
   hKernel32: THandle;
-  isVM: Boolean;
+  isVM: boolean;
 
-  //---------------------------------------------------------------
-  // Helper – returns True if the window belongs to a VM process
-  //---------------------------------------------------------------
-  function WindowBelongsToVM(Wnd: THandle): Boolean;
+//---------------------------------------------------------------
+// Helper – returns True if the window belongs to a VM process
+//---------------------------------------------------------------
+  function WindowBelongsToVM(Wnd: THandle): boolean;
   var
     pidLocal: DWORD;
     hP: THandle;
-    fname: array[0..MAX_PATH] of WideChar;
+    fname: array[0..MAX_PATH] of widechar;
     fLen: DWORD;
-    nameStr: WideString;
-    k: Integer;
+    nameStr: widestring;
+    k: integer;
     ext: string;
   begin
     Result := False;
@@ -214,7 +224,7 @@ var
       fLen := MAX_PATH;
       if QueryFull(hP, 0, @fname[0], @fLen) then
       begin
-        SetString(nameStr, PWideChar(@fname[0]), fLen);
+        SetString(nameStr, pwidechar(@fname[0]), fLen);
         k := LastDelimiter('\', string(nameStr));
         if k > 0 then
           ext := LowerCase(Copy(string(nameStr), k + 1, MaxInt))
@@ -230,14 +240,14 @@ var
   end;
 
   // Returns True if the window belongs to a console host process
-  function IsConsoleProcess(Wnd: THandle): Boolean;
+  function IsConsoleProcess(Wnd: THandle): boolean;
   var
     pidLocal: DWORD;
     hP: THandle;
-    fname: array[0..MAX_PATH] of WideChar;
+    fname: array[0..MAX_PATH] of widechar;
     fLen: DWORD;
-    nameStr: WideString;
-    k: Integer;
+    nameStr: widestring;
+    k: integer;
     ext: string;
     QueryFull: TQueryFullProcessImageNameW;
     hKernel32: THandle;
@@ -257,7 +267,7 @@ var
       fLen := MAX_PATH;
       if QueryFull(hP, 0, @fname[0], @fLen) then
       begin
-        SetString(nameStr, PWideChar(@fname[0]), fLen);
+        SetString(nameStr, pwidechar(@fname[0]), fLen);
         k := LastDelimiter('\', string(nameStr));
         if k > 0 then
           ext := LowerCase(Copy(string(nameStr), k + 1, MaxInt))
@@ -311,9 +321,9 @@ begin
           len := MAX_PATH;
           if QueryFull(hProc, 0, @fileName[0], @len) then
           begin
-            SetString(s, PWideChar(@fileName[0]), len);
+            SetString(s, pwidechar(@fileName[0]), len);
             j := LastDelimiter('\', string(s));
-            if (j > 0) and (StrIComp(PWideChar(@s[j+1]), 'explorer.exe') = 0) then
+            if (j > 0) and (StrIComp(pwidechar(@s[j + 1]), 'explorer.exe') = 0) then
             begin
               CloseHandle(hProc);
               Exit(False);
@@ -330,7 +340,7 @@ begin
           Exit(False);
       end;
 
-       // c) Reject windows owned by console processes (cmd, powershell, terminal)
+      // c) Reject windows owned by console processes (cmd, powershell, terminal)
       if Assigned(QueryFull) then
       begin
         if IsConsoleProcess(Wnd) then
@@ -360,9 +370,9 @@ begin
         len := MAX_PATH;
         if QueryFull(hProc, 0, @fileName[0], @len) then
         begin
-          SetString(s, PWideChar(@fileName[0]), len);
+          SetString(s, pwidechar(@fileName[0]), len);
           j := LastDelimiter('\', string(s));
-          if (j > 0) and (StrIComp(PWideChar(@s[j+1]), 'explorer.exe') = 0) then
+          if (j > 0) and (StrIComp(pwidechar(@s[j + 1]), 'explorer.exe') = 0) then
           begin
             CloseHandle(hProc);
             Exit(False);
@@ -381,8 +391,8 @@ begin
 
       // c) If the window belongs to none of the above, try EM_GETSEL
       //    (allows non‑standard editors that support this message)
-      if SendMessageTimeout(HWND(Wnd), EM_GETSEL, WPARAM(@dwStart), LPARAM(@dwEnd),
-                            SMTO_ABORTIFHUNG, 20, nil) <> 0 then
+      if SendMessageTimeout(HWND(Wnd), EM_GETSEL, WPARAM(@dwStart), LPARAM(@dwEnd), SMTO_ABORTIFHUNG,
+        20, nil) <> 0 then
         Exit(True);
     end;
 
@@ -405,13 +415,13 @@ begin
   // 1. Determine which handler (if any) is assigned for this message type
   case wParam of
     WM_LBUTTONDOWN: handler := FOnLeftDown;
-    WM_LBUTTONUP:   handler := FOnLeftUp;
+    WM_LBUTTONUP: handler := FOnLeftUp;
     WM_RBUTTONDOWN: handler := FOnRightDown;
-    WM_RBUTTONUP:   handler := FOnRightUp;
+    WM_RBUTTONUP: handler := FOnRightUp;
     WM_MBUTTONDOWN: handler := FOnMiddleDown;
-    WM_MBUTTONUP:   handler := FOnMiddleUp;
-  else
-    Exit;   // ignore all other messages (move, wheel, etc.) immediately
+    WM_MBUTTONUP: handler := FOnMiddleUp;
+    else
+      Exit;   // ignore all other messages (move, wheel, etc.) immediately
   end;
 
   // 2. If no handler is assigned for this event, exit without any further work
@@ -461,11 +471,11 @@ begin
   // 7. Set button type and call the assigned handler
   case wParam of
     WM_LBUTTONDOWN,
-    WM_LBUTTONUP:   info.Button := mbLeft;
+    WM_LBUTTONUP: info.Button := mbLeft;
     WM_RBUTTONDOWN,
-    WM_RBUTTONUP:   info.Button := mbRight;
+    WM_RBUTTONUP: info.Button := mbRight;
     WM_MBUTTONDOWN,
-    WM_MBUTTONUP:   info.Button := mbMiddle;
+    WM_MBUTTONUP: info.Button := mbMiddle;
   end;
 
   handler(Self, info);
@@ -485,20 +495,22 @@ begin
   inherited;
 end;
 
-procedure TGlobalMouseHook.SetEnabled(AValue: Boolean);
-  function IsWindowsXP: Boolean;
+procedure TGlobalMouseHook.SetEnabled(AValue: boolean);
+
+  function IsWindowsXP: boolean;
   begin
     // Windows XP has major version 5 and minor version 1
     Result := (Win32MajorVersion = 5) and (Win32MinorVersion = 1);
   end;
 
-  function hMod:HINST;
+  function hMod: HINST;
   begin
     if IsWindowsXP then
       Result := HInstance
     else
       Result := 0;
   end;
+
 begin
   if FEnabled = AValue then Exit;
   if AValue then
@@ -513,10 +525,10 @@ begin
       // Hook installation failed – keep FActiveInstance nil and FEnabled false.
       // Show a warning instead of crashing, especially important for XP.
       MessageBox(0,
-                 PChar('Cannot enable global mouse hook.' + sLineBreak +
-                       'System error: ' + SysErrorMessage(GetLastError)),
-                 'Trayslate',
-                 MB_ICONWARNING);
+        PChar('Cannot enable global mouse hook.' + sLineBreak + 'System error: ' +
+        SysErrorMessage(GetLastError)),
+        'Trayslate',
+        MB_ICONWARNING);
       Exit;   // FEnabled stays False, FActiveInstance stays nil
     end;
 
@@ -540,17 +552,17 @@ begin
   end;
 end;
 
-class function TGlobalMouseHook.IsCtrlPressed: Boolean;
+class function TGlobalMouseHook.IsCtrlPressed: boolean;
 begin
   Result := (GetAsyncKeyState(VK_CONTROL) and $8000) <> 0;
 end;
 
-class function TGlobalMouseHook.IsShiftPressed: Boolean;
+class function TGlobalMouseHook.IsShiftPressed: boolean;
 begin
   Result := (GetAsyncKeyState(VK_SHIFT) and $8000) <> 0;
 end;
 
-class function TGlobalMouseHook.IsAltPressed: Boolean;
+class function TGlobalMouseHook.IsAltPressed: boolean;
 begin
   Result := (GetAsyncKeyState(VK_MENU) and $8000) <> 0;
 end;
