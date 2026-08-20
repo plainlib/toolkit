@@ -486,6 +486,19 @@ begin
 end;
 
 procedure TGlobalMouseHook.SetEnabled(AValue: Boolean);
+  function IsWindowsXP: Boolean;
+  begin
+    // Windows XP has major version 5 and minor version 1
+    Result := (Win32MajorVersion = 5) and (Win32MinorVersion = 1);
+  end;
+
+  function hMod:HINST;
+  begin
+    if IsWindowsXP then
+      Result := HInstance
+    else
+      Result := 0;
+  end;
 begin
   if FEnabled = AValue then Exit;
   if AValue then
@@ -494,7 +507,7 @@ begin
       raise Exception.Create('Only one TGlobalMouseHook can be active at a time.');
 
     // Try to install the hook. HInstance is used for XP safety (error 1428 may still occur).
-    FHook := SetWindowsHookEx(WH_MOUSE_LL, @HookProc, HInstance, 0);
+    FHook := SetWindowsHookEx(WH_MOUSE_LL, @HookProc, HMod, 0);
     if FHook = 0 then
     begin
       // Hook installation failed – keep FActiveInstance nil and FEnabled false.
