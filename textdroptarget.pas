@@ -21,49 +21,54 @@ uses
   {$ENDIF};
 
 type
-  TTextDropTarget = class;   // forward declaration
+  TTextDropTarget = class;
 
   TTextDropEvent = procedure(Sender: TObject; const Text: string) of object;
 
   {$IFDEF WINDOWS}
-  // Internal helper implementing IDropTarget for the primary target.
-  // Lifetime fully controlled by interface references.
+
   TTextDropTargetImpl = class(TInterfacedObject, IDropTarget)
   private
     FOwner: TTextDropTarget;
     FEdit: TCustomEdit;
-    function HasTextFormat(const dataObj: IDataObject): Boolean;
-    // IDropTarget
-    function DragEnter(const dataObj: IDataObject; grfKeyState: DWORD;
-      pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
-    function DragOver(grfKeyState: DWORD; pt: TPoint;
+
+    function HasTextFormat(const DataObj: IDataObject): Boolean;
+
+    function DragEnter(const DataObj: IDataObject; GrfKeyState: DWORD;
+      Pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
+
+    function DragOver(GrfKeyState: DWORD; Pt: TPoint;
       var dwEffect: DWORD): HRESULT; stdcall;
+
     function DragLeave: HRESULT; stdcall;
-    function Drop(const dataObj: IDataObject; grfKeyState: DWORD;
-      pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
+
+    function Drop(const DataObj: IDataObject; GrfKeyState: DWORD;
+      Pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
   public
     constructor Create(AOwner: TTextDropTarget; AEdit: TCustomEdit);
   end;
 
-  // Internal helper for sub-targets. Drops on these controls
-  // fire the OnTextDropped event and optionally insert text into
-  // the main target, never into the sub-target itself.
   TTextDropTargetSubImpl = class(TInterfacedObject, IDropTarget)
   private
     FOwner: TTextDropTarget;
     FSubControl: TWinControl;
-    function HasTextFormat(const dataObj: IDataObject): Boolean;
-    // IDropTarget
-    function DragEnter(const dataObj: IDataObject; grfKeyState: DWORD;
-      pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
-    function DragOver(grfKeyState: DWORD; pt: TPoint;
+
+    function HasTextFormat(const DataObj: IDataObject): Boolean;
+
+    function DragEnter(const DataObj: IDataObject; GrfKeyState: DWORD;
+      Pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
+
+    function DragOver(GrfKeyState: DWORD; Pt: TPoint;
       var dwEffect: DWORD): HRESULT; stdcall;
+
     function DragLeave: HRESULT; stdcall;
-    function Drop(const dataObj: IDataObject; grfKeyState: DWORD;
-      pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
+
+    function Drop(const DataObj: IDataObject; GrfKeyState: DWORD;
+      Pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
   public
     constructor Create(AOwner: TTextDropTarget; AControl: TWinControl);
   end;
+
   {$ENDIF}
 
   TTextDropTarget = class(TComponent)
@@ -71,38 +76,49 @@ type
     FTarget: TCustomEdit;
     FInsertText: boolean;
     FOnTextDropped: TTextDropEvent;
+
     {$IFDEF WINDOWS}
     FImpl: IDropTarget;
     FRegisteredHandle: HWND;
-    FSubControls: TFPList;               // list of sub-target controls (TWinControl)
-    FSubHandles: TFPList;                // parallel list of original HWND used for registration
-    FSubImpls: TInterfaceList;           // parallel list of IDropTarget interfaces
+
+    FSubControls: TFPList;
+    FSubHandles: TFPList;
+    FSubImpls: TInterfaceList;
+
     procedure RegisterTarget;
     procedure UnregisterTarget;
+
     procedure RegisterSubTarget(AControl: TWinControl);
     procedure UnregisterSubTarget(AControl: TWinControl);
+
     function GetSubTarget(Index: Integer): TWinControl;
     {$ENDIF}
+
     procedure SetTarget(AValue: TCustomEdit);
     procedure SetInsertText(AValue: boolean);
+
   protected
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+
     procedure DoTextDropped(ASender: TObject; const Text: string); virtual;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+
     {$IFDEF WINDOWS}
-    property SubTargets[Index: integer]: TWinControl read GetSubTarget;
+    property SubTargets[Index: Integer]: TWinControl
+      read GetSubTarget;
 
     procedure ForceRegister;
     procedure Unregister;
 
-    // Sub-target management – any TWinControl can be used (TPanel, TGroupBox, etc.)
     procedure AddSubTarget(AControl: TWinControl);
     procedure RemoveSubTarget(AControl: TWinControl);
     procedure ClearSubTargets;
-    function SubTargetCount: integer;
+
+    function SubTargetCount: Integer;
     {$ENDIF}
+
   published
     property Target: TCustomEdit read FTarget write SetTarget;
     property InsertText: boolean read FInsertText write SetInsertText default True;
@@ -122,34 +138,41 @@ end;
 
 constructor TTextDropTarget.Create(AOwner: TComponent);
 begin
-  inherited;
+  inherited Create(AOwner);
+
   FTarget := nil;
   FInsertText := True;
   FOnTextDropped := nil;
+
   {$IFDEF WINDOWS}
   FImpl := nil;
   FRegisteredHandle := 0;
+
   FSubControls := TFPList.Create;
-  FSubHandles  := TFPList.Create;
-  FSubImpls    := TInterfaceList.Create;
+  FSubHandles := TFPList.Create;
+  FSubImpls := TInterfaceList.Create;
   {$ENDIF}
 end;
 
 destructor TTextDropTarget.Destroy;
 begin
   {$IFDEF WINDOWS}
-  ClearSubTargets;                     // unregister and remove all sub-targets
+  ClearSubTargets;
+
   FSubImpls.Free;
   FSubHandles.Free;
   FSubControls.Free;
   {$ENDIF}
-  Target := nil;                       // unregister primary target
-  inherited;
+
+  Target := nil;
+
+  inherited Destroy;
 end;
 
 procedure TTextDropTarget.SetTarget(AValue: TCustomEdit);
 begin
-  if FTarget = AValue then Exit;
+  if FTarget = AValue then
+    Exit;
 
   {$IFDEF WINDOWS}
   UnregisterTarget;
@@ -161,6 +184,7 @@ begin
   if Assigned(FTarget) then
   begin
     FTarget.FreeNotification(Self);
+
     if FTarget.HandleAllocated then
       RegisterTarget;
   end;
@@ -169,24 +193,29 @@ end;
 
 procedure TTextDropTarget.SetInsertText(AValue: boolean);
 begin
-  if FInsertText = AValue then Exit;
+  if FInsertText = AValue then
+    Exit;
+
   FInsertText := AValue;
 end;
 
 procedure TTextDropTarget.Notification(AComponent: TComponent; Operation: TOperation);
 begin
   inherited;
-  if Operation = opRemove then
+
+  if Operation <> opRemove then
+    Exit;
+
+  if AComponent = FTarget then
   begin
-    if AComponent = FTarget then
-      Target := nil
-    {$IFDEF WINDOWS}
-    else if AComponent is TWinControl then
-      RemoveSubTarget(TWinControl(AComponent));  // auto-remove destroyed sub-targets
-    {$ELSE}
-    ;
-    {$ENDIF}
+    Target := nil;
+    Exit;
   end;
+
+  {$IFDEF WINDOWS}
+  if AComponent is TWinControl then
+    RemoveSubTarget(TWinControl(AComponent));
+  {$ENDIF}
 end;
 
 procedure TTextDropTarget.DoTextDropped(ASender: TObject; const Text: string);
@@ -198,192 +227,279 @@ end;
 {$IFDEF WINDOWS}
 
 var
-  // Registered clipboard formats for various text types
   CF_HTML_FORMAT: UINT = 0;
-  CF_HTML_MIME:   UINT = 0;
-  CF_TEXT_PLAIN:  UINT = 0;
+  CF_HTML_MIME: UINT = 0;
+  CF_TEXT_PLAIN: UINT = 0;
 
-// Simple HTML-to-text converter that strips all tags
 function StripHTMLTags(const HTML: string): string;
 var
-  i: Integer;
+  I: Integer;
   InTag: Boolean;
 begin
   Result := '';
   InTag := False;
-  for i := 1 to Length(HTML) do
+
+  for I := 1 to Length(HTML) do
   begin
-    if HTML[i] = '<' then
+    if HTML[I] = '<' then
       InTag := True
-    else if HTML[i] = '>' then
+    else if HTML[I] = '>' then
       InTag := False
     else if not InTag then
-      Result := Result + HTML[i];
+      Result := Result + HTML[I];
   end;
 end;
 
-// Standalone helper: returns True if the data object contains a supported text format.
-function HasDropTextFormat(const dataObj: IDataObject): Boolean;
+function HasDropTextFormat(const DataObj: IDataObject): Boolean;
 var
-  fmt: TFormatEtc;
+  Fmt: TFormatEtc;
 begin
   Result := False;
-  fmt.ptd := nil;
-  fmt.dwAspect := DVASPECT_CONTENT;
-  fmt.lindex := -1;
-  fmt.tymed := TYMED_HGLOBAL;
 
-  fmt.cfFormat := CF_UNICODETEXT;
-  if Succeeded(dataObj.QueryGetData(fmt)) then Exit(True);
-  fmt.cfFormat := CF_TEXT;
-  if Succeeded(dataObj.QueryGetData(fmt)) then Exit(True);
+  Fmt.ptd := nil;
+  Fmt.dwAspect := DVASPECT_CONTENT;
+  Fmt.lindex := -1;
+  Fmt.tymed := TYMED_HGLOBAL;
+
+  Fmt.cfFormat := CF_UNICODETEXT;
+  if Succeeded(DataObj.QueryGetData(Fmt)) then
+    Exit(True);
+
+  Fmt.cfFormat := CF_TEXT;
+  if Succeeded(DataObj.QueryGetData(Fmt)) then
+    Exit(True);
 
   if CF_HTML_FORMAT <> 0 then
   begin
-    fmt.cfFormat := CF_HTML_FORMAT;
-    if Succeeded(dataObj.QueryGetData(fmt)) then Exit(True);
+    Fmt.cfFormat := CF_HTML_FORMAT;
+    if Succeeded(DataObj.QueryGetData(Fmt)) then
+      Exit(True);
   end;
+
   if CF_HTML_MIME <> 0 then
   begin
-    fmt.cfFormat := CF_HTML_MIME;
-    if Succeeded(dataObj.QueryGetData(fmt)) then Exit(True);
+    Fmt.cfFormat := CF_HTML_MIME;
+    if Succeeded(DataObj.QueryGetData(Fmt)) then
+      Exit(True);
   end;
+
   if CF_TEXT_PLAIN <> 0 then
   begin
-    fmt.cfFormat := CF_TEXT_PLAIN;
-    if Succeeded(dataObj.QueryGetData(fmt)) then Exit(True);
+    Fmt.cfFormat := CF_TEXT_PLAIN;
+    if Succeeded(DataObj.QueryGetData(Fmt)) then
+      Exit(True);
   end;
 end;
 
-// Standalone helper: extracts text from the data object, returning an empty string on failure.
-function GetDropText(const dataObj: IDataObject): string;
+function GetDropText(const DataObj: IDataObject): string;
 var
-  fmt: TFormatEtc;
-  stg: TStgMedium;
-  pText: PChar;
-  isUnicode, isPlainText, isHTML, isHTMLMime: Boolean;
-  cf: UINT;
+  Fmt: TFormatEtc;
+  Stg: TStgMedium;
+  PText: PChar;
+
+  IsUnicode: Boolean;
+  IsPlainText: Boolean;
+  IsHTML: Boolean;
+  IsHTMLMime: Boolean;
+
+  CF: UINT;
 begin
   Result := '';
-  fmt.ptd := nil;
-  fmt.dwAspect := DVASPECT_CONTENT;
-  fmt.lindex := -1;
-  fmt.tymed := TYMED_HGLOBAL;
 
-  isUnicode := False;
-  isPlainText := False;
-  isHTML := False;
-  isHTMLMime := False;
+  Fmt.ptd := nil;
+  Fmt.dwAspect := DVASPECT_CONTENT;
+  Fmt.lindex := -1;
+  Fmt.tymed := TYMED_HGLOBAL;
 
-  fmt.cfFormat := CF_UNICODETEXT;
-  if Succeeded(dataObj.QueryGetData(fmt)) then
-    isUnicode := True
+  IsUnicode := False;
+  IsPlainText := False;
+  IsHTML := False;
+  IsHTMLMime := False;
+  CF := 0;
+
+  Fmt.cfFormat := CF_UNICODETEXT;
+
+  if Succeeded(DataObj.QueryGetData(Fmt)) then
+    IsUnicode := True
   else
   begin
-    if (CF_HTML_FORMAT <> 0) then
+    if CF_HTML_FORMAT <> 0 then
     begin
-      fmt.cfFormat := CF_HTML_FORMAT;
-      if Succeeded(dataObj.QueryGetData(fmt)) then
+      Fmt.cfFormat := CF_HTML_FORMAT;
+
+      if Succeeded(DataObj.QueryGetData(Fmt)) then
       begin
-        isHTML := True;
-        cf := CF_HTML_FORMAT;
+        IsHTML := True;
+        CF := CF_HTML_FORMAT;
       end;
     end;
-    if not isHTML and (CF_HTML_MIME <> 0) then
+
+    if not IsHTML and (CF_HTML_MIME <> 0) then
     begin
-      fmt.cfFormat := CF_HTML_MIME;
-      if Succeeded(dataObj.QueryGetData(fmt)) then
+      Fmt.cfFormat := CF_HTML_MIME;
+
+      if Succeeded(DataObj.QueryGetData(Fmt)) then
       begin
-        isHTMLMime := True;
-        cf := CF_HTML_MIME;
+        IsHTMLMime := True;
+        CF := CF_HTML_MIME;
       end;
     end;
-    if not isHTML and not isHTMLMime and (CF_TEXT_PLAIN <> 0) then
+
+    if not IsHTML and not IsHTMLMime and
+       (CF_TEXT_PLAIN <> 0) then
     begin
-      fmt.cfFormat := CF_TEXT_PLAIN;
-      if Succeeded(dataObj.QueryGetData(fmt)) then
+      Fmt.cfFormat := CF_TEXT_PLAIN;
+
+      if Succeeded(DataObj.QueryGetData(Fmt)) then
       begin
-        isPlainText := True;
-        cf := CF_TEXT_PLAIN;
+        IsPlainText := True;
+        CF := CF_TEXT_PLAIN;
       end;
     end;
-    if not isHTML and not isHTMLMime and not isPlainText then
+
+    if not IsHTML and not IsHTMLMime and not IsPlainText then
     begin
-      fmt.cfFormat := CF_TEXT;
-      if Failed(dataObj.QueryGetData(fmt)) then
+      Fmt.cfFormat := CF_TEXT;
+
+      if Failed(DataObj.QueryGetData(Fmt)) then
         Exit;
     end;
   end;
 
-  if isUnicode then
-    fmt.cfFormat := CF_UNICODETEXT
-  else if isHTML or isHTMLMime then
-    fmt.cfFormat := cf
-  else if isPlainText then
-    fmt.cfFormat := CF_TEXT_PLAIN
+  if IsUnicode then
+    Fmt.cfFormat := CF_UNICODETEXT
+  else if IsHTML or IsHTMLMime then
+    Fmt.cfFormat := CF
+  else if IsPlainText then
+    Fmt.cfFormat := CF_TEXT_PLAIN
   else
-    fmt.cfFormat := CF_TEXT;
+    Fmt.cfFormat := CF_TEXT;
 
-  if Failed(dataObj.GetData(fmt, stg)) then
+  if Failed(DataObj.GetData(Fmt, Stg)) then
     Exit;
 
   try
-    if isUnicode then
-    begin
-      pText := GlobalLock(stg.hGlobal);
-      if not Assigned(pText) then Exit;
-      try
-        Result := PWideChar(pText);
-      finally
-        GlobalUnlock(stg.hGlobal);
-      end;
-    end
-    else if isHTML or isHTMLMime then
-    begin
-      pText := GlobalLock(stg.hGlobal);
-      if not Assigned(pText) then Exit;
-      try
-        Result := StripHTMLTags(string(PAnsiChar(pText)));
-      finally
-        GlobalUnlock(stg.hGlobal);
-      end;
-    end
-    else if isPlainText then
-    begin
-      pText := GlobalLock(stg.hGlobal);
-      if not Assigned(pText) then Exit;
-      try
-        Result := string(PAnsiChar(pText));
-      finally
-        GlobalUnlock(stg.hGlobal);
-      end;
-    end
-    else // CF_TEXT (ANSI)
-    begin
-      pText := GlobalLock(stg.hGlobal);
-      if not Assigned(pText) then Exit;
-      try
-        Result := string(PAnsiChar(pText));
-      finally
-        GlobalUnlock(stg.hGlobal);
-      end;
+    PText := GlobalLock(Stg.hGlobal);
+
+    if not Assigned(PText) then
+      Exit;
+
+    try
+      if IsUnicode then
+        Result := PWideChar(PText)
+      else if IsHTML or IsHTMLMime then
+        Result := StripHTMLTags(string(PAnsiChar(PText)))
+      else
+        Result := string(PAnsiChar(PText));
+    finally
+      GlobalUnlock(Stg.hGlobal);
     end;
   finally
-    ReleaseStgMedium(stg);
+    ReleaseStgMedium(Stg);
   end;
 end;
 
-{ Primary target registration }
+function IsStandardEditWindow(AHandle: HWND): Boolean;
+var
+  Buffer: array[0..255] of Char;
+  Len: Integer;
+begin
+  Result := False;
+
+  if AHandle = 0 then
+    Exit;
+
+  Len := GetClassName(AHandle, Buffer, Length(Buffer));
+
+  if Len > 0 then
+    Result := StrComp(Buffer, 'EDIT') = 0;
+end;
+
+function IsRichEditWindow(AHandle: HWND): Boolean;
+var
+  Buffer: array[0..255] of Char;
+  Len: Integer;
+begin
+  Result := False;
+
+  if AHandle = 0 then
+    Exit;
+
+  Len := GetClassName(AHandle, Buffer, Length(Buffer));
+
+  if Len > 0 then
+    Result :=
+      (StrComp(Buffer, 'RICHEDIT') = 0) or
+      (StrComp(Buffer, 'RICHEDIT20W') = 0) or
+      (StrComp(Buffer, 'RICHEDIT50W') = 0);
+end;
+
+function GetCharIndexFromPos(AEdit: TCustomEdit;
+  X, Y: Integer): Integer;
+var
+  ClientPt: TPoint;
+  PtL: POINTL;
+  CharIdx: LResult;
+  IsEdit: Boolean;
+  IsRich: Boolean;
+begin
+  Result := -1;
+
+  if not Assigned(AEdit) or not AEdit.HandleAllocated then
+    Exit;
+
+  IsEdit := IsStandardEditWindow(AEdit.Handle);
+  IsRich := IsRichEditWindow(AEdit.Handle);
+
+  if not (IsEdit or IsRich) then
+    Exit;
+
+  ClientPt := AEdit.ScreenToClient(Classes.Point(X, Y));
+
+  if IsEdit then
+  begin
+    CharIdx := SendMessage(
+      AEdit.Handle,
+      EM_CHARFROMPOS,
+      0,
+      MakeLParam(ClientPt.X, ClientPt.Y)
+    );
+  end
+  else
+  begin
+    PtL.X := ClientPt.X;
+    PtL.Y := ClientPt.Y;
+
+    CharIdx := SendMessage(
+      AEdit.Handle,
+      EM_CHARFROMPOS,
+      0,
+      LPARAM(@PtL)
+    );
+  end;
+
+  if CharIdx >= 0 then
+    Result := Integer(CharIdx);
+end;
+
+{ Registration }
 
 procedure TTextDropTarget.RegisterTarget;
 begin
-  if not Assigned(FTarget) or not FTarget.HandleAllocated then Exit;
-  if FRegisteredHandle = FTarget.Handle then Exit;
+  if not Assigned(FTarget) or not FTarget.HandleAllocated then
+    Exit;
+
+  if FRegisteredHandle = FTarget.Handle then
+    Exit;
 
   UnregisterTarget;
 
   FImpl := TTextDropTargetImpl.Create(Self, FTarget);
-  OleCheck(RegisterDragDrop(FTarget.Handle, FImpl));
+
+  OleCheck(
+    RegisterDragDrop(FTarget.Handle, FImpl)
+  );
+
   FRegisteredHandle := FTarget.Handle;
 end;
 
@@ -393,19 +509,20 @@ begin
   begin
     if IsWindow(FRegisteredHandle) then
       RevokeDragDrop(FRegisteredHandle);
+
     FRegisteredHandle := 0;
   end;
+
   FImpl := nil;
 end;
 
 procedure TTextDropTarget.ForceRegister;
 var
-  i: Integer;
-  ctrl: TWinControl;
-  h: HWND;
+  I: Integer;
+  Ctrl: TWinControl;
+  H: HWND;
   SubImpl: IDropTarget;
 begin
-  // Primary target
   if Assigned(FTarget) and FTarget.HandleAllocated then
   begin
     if FRegisteredHandle <> FTarget.Handle then
@@ -417,90 +534,109 @@ begin
   else
     UnregisterTarget;
 
-  // Unregister all sub-targets (keep FSubControls intact)
-  for i := 0 to FSubHandles.Count - 1 do
+  for I := 0 to FSubHandles.Count - 1 do
   begin
-    h := HWND(FSubHandles[i]);
-    if (h <> 0) and IsWindow(h) then
-      RevokeDragDrop(h);
+    H := HWND(FSubHandles[I]);
+
+    if (H <> 0) and IsWindow(H) then
+      RevokeDragDrop(H);
   end;
+
   FSubHandles.Clear;
   FSubImpls.Clear;
 
-  // Re-register all sub-targets from FSubControls
-  for i := 0 to FSubControls.Count - 1 do
+  for I := 0 to FSubControls.Count - 1 do
   begin
-    ctrl := TWinControl(FSubControls[i]);
-    if not ctrl.HandleAllocated then
-      ctrl.HandleNeeded;
-    h := ctrl.Handle;
-    SubImpl := TTextDropTargetSubImpl.Create(Self, ctrl);
-    OleCheck(RegisterDragDrop(h, SubImpl));
-    FSubHandles.Add(Pointer(h));
+    Ctrl := TWinControl(FSubControls[I]);
+
+    if not Ctrl.HandleAllocated then
+      Ctrl.HandleNeeded;
+
+    H := Ctrl.Handle;
+
+    SubImpl := TTextDropTargetSubImpl.Create(Self, Ctrl);
+
+    OleCheck(
+      RegisterDragDrop(H, SubImpl)
+    );
+
+    FSubHandles.Add(Pointer(H));
     FSubImpls.Add(SubImpl as IUnknown);
   end;
 end;
 
 procedure TTextDropTarget.Unregister;
 var
-  i: Integer;
-  h: HWND;
+  I: Integer;
+  H: HWND;
 begin
   UnregisterTarget;
 
-  // Unregister all sub-targets, clear handles and impls but keep FSubControls
-  for i := 0 to FSubHandles.Count - 1 do
+  for I := 0 to FSubHandles.Count - 1 do
   begin
-    h := HWND(FSubHandles[i]);
-    if (h <> 0) and IsWindow(h) then
-      RevokeDragDrop(h);
+    H := HWND(FSubHandles[I]);
+
+    if (H <> 0) and IsWindow(H) then
+      RevokeDragDrop(H);
   end;
+
   FSubHandles.Clear;
   FSubImpls.Clear;
 end;
 
-{ Sub-target management }
+{ Sub-targets }
 
 procedure TTextDropTarget.RegisterSubTarget(AControl: TWinControl);
 var
   SubImpl: IDropTarget;
-  h: HWND;
+  H: HWND;
 begin
-  if not Assigned(AControl) or (AControl = FTarget) then Exit;   // ignore main target
-  if FSubControls.IndexOf(AControl) >= 0 then Exit;             // already registered
+  if not Assigned(AControl) or (AControl = FTarget) then
+    Exit;
+
+  if FSubControls.IndexOf(AControl) >= 0 then
+    Exit;
 
   if not AControl.HandleAllocated then
     AControl.HandleNeeded;
-  h := AControl.Handle;
+
+  H := AControl.Handle;
 
   SubImpl := TTextDropTargetSubImpl.Create(Self, AControl);
-  OleCheck(RegisterDragDrop(h, SubImpl));
+
+  OleCheck(
+    RegisterDragDrop(H, SubImpl)
+  );
 
   FSubControls.Add(AControl);
-  FSubHandles.Add(Pointer(h));
+  FSubHandles.Add(Pointer(H));
   FSubImpls.Add(SubImpl as IUnknown);
+
   AControl.FreeNotification(Self);
 end;
 
 procedure TTextDropTarget.UnregisterSubTarget(AControl: TWinControl);
 var
-  idx: Integer;
-  h: HWND;
+  Idx: Integer;
+  H: HWND;
 begin
-  idx := FSubControls.IndexOf(AControl);
-  if idx < 0 then Exit;
+  Idx := FSubControls.IndexOf(AControl);
 
-  // Guard against desynchronized lists (e.g., after Unregister cleared FSubHandles)
-  if idx < FSubHandles.Count then
+  if Idx < 0 then
+    Exit;
+
+  if Idx < FSubHandles.Count then
   begin
-    h := HWND(FSubHandles[idx]);
-    if (h <> 0) and IsWindow(h) then
-      RevokeDragDrop(h);
-    FSubHandles.Delete(idx);
-    FSubImpls.Delete(idx);
+    H := HWND(FSubHandles[Idx]);
+
+    if (H <> 0) and IsWindow(H) then
+      RevokeDragDrop(H);
+
+    FSubHandles.Delete(Idx);
+    FSubImpls.Delete(Idx);
   end;
 
-  FSubControls.Delete(idx);
+  FSubControls.Delete(Idx);
 end;
 
 procedure TTextDropTarget.AddSubTarget(AControl: TWinControl);
@@ -516,7 +652,9 @@ end;
 procedure TTextDropTarget.ClearSubTargets;
 begin
   while FSubControls.Count > 0 do
-    RemoveSubTarget(TWinControl(FSubControls.Last));
+    RemoveSubTarget(
+      TWinControl(FSubControls.Last)
+    );
 end;
 
 function TTextDropTarget.SubTargetCount: Integer;
@@ -531,47 +669,64 @@ end;
 
 { TTextDropTargetImpl }
 
-constructor TTextDropTargetImpl.Create(AOwner: TTextDropTarget; AEdit: TCustomEdit);
+constructor TTextDropTargetImpl.Create(
+  AOwner: TTextDropTarget;
+  AEdit: TCustomEdit);
 begin
   inherited Create;
+
   FOwner := AOwner;
   FEdit := AEdit;
 end;
 
-function TTextDropTargetImpl.HasTextFormat(const dataObj: IDataObject): Boolean;
+function TTextDropTargetImpl.HasTextFormat(
+  const DataObj: IDataObject): Boolean;
 begin
-  Result := HasDropTextFormat(dataObj);
+  Result := HasDropTextFormat(DataObj);
 end;
 
-function TTextDropTargetImpl.DragEnter(const dataObj: IDataObject;
-  grfKeyState: DWORD; pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
+function TTextDropTargetImpl.DragEnter(
+  const DataObj: IDataObject;
+  GrfKeyState: DWORD;
+  Pt: TPoint;
+  var dwEffect: DWORD): HRESULT; stdcall;
 begin
-  if HasTextFormat(dataObj) then
+  if HasTextFormat(DataObj) then
     dwEffect := DROPEFFECT_COPY
   else
     dwEffect := DROPEFFECT_NONE;
+
   Result := S_OK;
 end;
 
-function TTextDropTargetImpl.DragOver(grfKeyState: DWORD; pt: TPoint;
+function TTextDropTargetImpl.DragOver(
+  GrfKeyState: DWORD;
+  Pt: TPoint;
   var dwEffect: DWORD): HRESULT; stdcall;
 var
-  ClientPt: TPoint;
-  CharIdx: LResult;
+  CharIdx: Integer;
 begin
   dwEffect := DROPEFFECT_COPY;
 
-  // Update caret position if text insertion is enabled and target is valid
-  if FOwner.InsertText and Assigned(FEdit) and FEdit.HandleAllocated then
+  // Insert mode is the only mode where the caret follows the mouse.
+  if not FOwner.InsertText then
   begin
-    // Give focus to the editor so that the caret becomes visible
-    if FEdit.CanFocus then
-      FEdit.SetFocus;
-    ClientPt := FEdit.ScreenToClient(pt);
-    CharIdx := SendMessage(FEdit.Handle, EM_CHARFROMPOS, 0,
-      MakeLParam(ClientPt.X, ClientPt.Y));
-    // Place the caret without selecting any text
-    SendMessage(FEdit.Handle, EM_SETSEL, LoWord(CharIdx), LoWord(CharIdx));
+    Result := S_OK;
+    Exit;
+  end;
+
+  if not Assigned(FEdit) or not FEdit.HandleAllocated then
+  begin
+    Result := S_OK;
+    Exit;
+  end;
+
+  CharIdx := GetCharIndexFromPos(FEdit, Pt.X, Pt.Y);
+
+  if CharIdx >= 0 then
+  begin
+    FEdit.SelStart := CharIdx;
+    FEdit.SelLength := 0;
   end;
 
   Result := S_OK;
@@ -582,12 +737,14 @@ begin
   Result := S_OK;
 end;
 
-function TTextDropTargetImpl.Drop(const dataObj: IDataObject;
-  grfKeyState: DWORD; pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
+function TTextDropTargetImpl.Drop(
+  const DataObj: IDataObject;
+  GrfKeyState: DWORD;
+  Pt: TPoint;
+  var dwEffect: DWORD): HRESULT; stdcall;
 var
-  s: string;
-  ClientPt: TPoint;
-  CharIdx: LResult;
+  S: string;
+  CharIdx: Integer;
 begin
   if not Assigned(FEdit) or not Assigned(FOwner) then
   begin
@@ -595,24 +752,34 @@ begin
     Exit(E_FAIL);
   end;
 
-  s := GetDropText(dataObj);
-  if s = '' then
+  S := GetDropText(DataObj);
+
+  if S = '' then
   begin
     dwEffect := DROPEFFECT_NONE;
     Exit(E_FAIL);
   end;
 
-  // Pass the primary target control as Sender
-  FOwner.DoTextDropped(FEdit, s);
-
-  if FOwner.InsertText then
+  if not FOwner.InsertText then
   begin
-    ClientPt := FEdit.ScreenToClient(pt);
-    CharIdx := SendMessage(FEdit.Handle, EM_CHARFROMPOS, 0,
-      MakeLParam(ClientPt.X, ClientPt.Y));
-    FEdit.SelStart := LoWord(CharIdx);
-    FEdit.SelText := s;
+    // Replace the complete contents without touching the caret position.
+    FEdit.Text := S;
+
+    dwEffect := DROPEFFECT_COPY;
+    Exit(S_OK);
   end;
+
+  CharIdx := GetCharIndexFromPos(FEdit, Pt.X, Pt.Y);
+
+  if CharIdx >= 0 then
+  begin
+    FEdit.SelStart := CharIdx;
+    FEdit.SelLength := 0;
+  end;
+
+  FEdit.SelText := S;
+
+  FOwner.DoTextDropped(FEdit, S);
 
   dwEffect := DROPEFFECT_COPY;
   Result := S_OK;
@@ -620,47 +787,69 @@ end;
 
 { TTextDropTargetSubImpl }
 
-constructor TTextDropTargetSubImpl.Create(AOwner: TTextDropTarget; AControl: TWinControl);
+constructor TTextDropTargetSubImpl.Create(
+  AOwner: TTextDropTarget;
+  AControl: TWinControl);
 begin
   inherited Create;
+
   FOwner := AOwner;
   FSubControl := AControl;
 end;
 
-function TTextDropTargetSubImpl.HasTextFormat(const dataObj: IDataObject): Boolean;
+function TTextDropTargetSubImpl.HasTextFormat(
+  const DataObj: IDataObject): Boolean;
 begin
-  Result := HasDropTextFormat(dataObj);
+  Result := HasDropTextFormat(DataObj);
 end;
 
-function TTextDropTargetSubImpl.DragEnter(const dataObj: IDataObject;
-  grfKeyState: DWORD; pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
+function TTextDropTargetSubImpl.DragEnter(
+  const DataObj: IDataObject;
+  GrfKeyState: DWORD;
+  Pt: TPoint;
+  var dwEffect: DWORD): HRESULT; stdcall;
 begin
-  if HasTextFormat(dataObj) then
+  if HasTextFormat(DataObj) then
     dwEffect := DROPEFFECT_COPY
   else
     dwEffect := DROPEFFECT_NONE;
+
   Result := S_OK;
 end;
 
-function TTextDropTargetSubImpl.DragOver(grfKeyState: DWORD; pt: TPoint;
+function TTextDropTargetSubImpl.DragOver(
+  GrfKeyState: DWORD;
+  Pt: TPoint;
   var dwEffect: DWORD): HRESULT; stdcall;
 var
-  ClientPt: TPoint;
-  CharIdx: LResult;
+  CharIdx: Integer;
 begin
   dwEffect := DROPEFFECT_COPY;
 
-  // Update caret position in the primary target if available
-  if FOwner.InsertText and Assigned(FOwner.FTarget) and
-     FOwner.FTarget.HandleAllocated then
+  // No caret tracking at all in replace mode.
+  if not FOwner.InsertText then
   begin
-     // Give focus to the primary editor so that the caret becomes visible
-    if FOwner.FTarget.CanFocus then
-      FOwner.FTarget.SetFocus;
-    ClientPt := FOwner.FTarget.ScreenToClient(pt);
-    CharIdx := SendMessage(FOwner.FTarget.Handle, EM_CHARFROMPOS, 0,
-      MakeLParam(ClientPt.X, ClientPt.Y));
-    SendMessage(FOwner.FTarget.Handle, EM_SETSEL, LoWord(CharIdx), LoWord(CharIdx));
+    Result := S_OK;
+    Exit;
+  end;
+
+  if not Assigned(FOwner.FTarget) or
+     not FOwner.FTarget.HandleAllocated then
+  begin
+    Result := S_OK;
+    Exit;
+  end;
+
+  CharIdx := GetCharIndexFromPos(
+    FOwner.FTarget,
+    Pt.X,
+    Pt.Y
+  );
+
+  if CharIdx >= 0 then
+  begin
+    FOwner.FTarget.SelStart := CharIdx;
+    FOwner.FTarget.SelLength := 0;
   end;
 
   Result := S_OK;
@@ -671,12 +860,14 @@ begin
   Result := S_OK;
 end;
 
-function TTextDropTargetSubImpl.Drop(const dataObj: IDataObject;
-  grfKeyState: DWORD; pt: TPoint; var dwEffect: DWORD): HRESULT; stdcall;
+function TTextDropTargetSubImpl.Drop(
+  const DataObj: IDataObject;
+  GrfKeyState: DWORD;
+  Pt: TPoint;
+  var dwEffect: DWORD): HRESULT; stdcall;
 var
-  s: string;
-  ClientPt: TPoint;
-  CharIdx: LResult;
+  S: string;
+  CharIdx: Integer;
 begin
   if not Assigned(FOwner) then
   begin
@@ -684,26 +875,46 @@ begin
     Exit(E_FAIL);
   end;
 
-  s := GetDropText(dataObj);
-  if s = '' then
+  S := GetDropText(DataObj);
+
+  if S = '' then
   begin
     dwEffect := DROPEFFECT_NONE;
     Exit(E_FAIL);
   end;
 
-  // Pass the sub-target control as Sender
-  FOwner.DoTextDropped(FSubControl, s);
-
-  // Insert text into the **primary** target if allowed and available.
-  if FOwner.InsertText and Assigned(FOwner.FTarget) and FOwner.FTarget.HandleAllocated then
+  if not FOwner.InsertText then
   begin
-    // Map the drop point to the primary target's client coordinates.
-    ClientPt := FOwner.FTarget.ScreenToClient(pt);
-    CharIdx := SendMessage(FOwner.FTarget.Handle, EM_CHARFROMPOS, 0,
-      MakeLParam(ClientPt.X, ClientPt.Y));
-    FOwner.FTarget.SelStart := LoWord(CharIdx);
-    FOwner.FTarget.SelText := s;
+    // Replace the complete contents without moving the caret.
+    if Assigned(FOwner.FTarget) and
+       FOwner.FTarget.HandleAllocated then
+      FOwner.FTarget.Text := S;
+
+    FOwner.DoTextDropped(FSubControl, S);
+
+    dwEffect := DROPEFFECT_COPY;
+    Exit(S_OK);
   end;
+
+  if Assigned(FOwner.FTarget) and
+     FOwner.FTarget.HandleAllocated then
+  begin
+    CharIdx := GetCharIndexFromPos(
+      FOwner.FTarget,
+      Pt.X,
+      Pt.Y
+    );
+
+    if CharIdx >= 0 then
+    begin
+      FOwner.FTarget.SelStart := CharIdx;
+      FOwner.FTarget.SelLength := 0;
+    end;
+
+    FOwner.FTarget.SelText := S;
+  end;
+
+  FOwner.DoTextDropped(FSubControl, S);
 
   dwEffect := DROPEFFECT_COPY;
   Result := S_OK;
@@ -712,13 +923,17 @@ end;
 {$ENDIF}
 
 {$IFDEF WINDOWS}
+
 initialization
   CoInitializeEx(nil, COINIT_APARTMENTTHREADED);
+
   CF_HTML_FORMAT := RegisterClipboardFormat('HTML Format');
-  CF_HTML_MIME   := RegisterClipboardFormat('text/html');
-  CF_TEXT_PLAIN  := RegisterClipboardFormat('text/plain');
+  CF_HTML_MIME := RegisterClipboardFormat('text/html');
+  CF_TEXT_PLAIN := RegisterClipboardFormat('text/plain');
+
 finalization
   CoUninitialize;
+
 {$ENDIF}
 
 end.
