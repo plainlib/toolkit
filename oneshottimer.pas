@@ -27,7 +27,6 @@ type
   private
     FCallback: TOneShotCallback;
     FUserVar: ^TTimer;
-    procedure AsyncFree(Data: PtrInt);
   public
     constructor CreateWith(ADelay: cardinal; ACallback: TOneShotCallback; var ExtRef: TTimer);
     procedure TimerFire(Sender: TObject);
@@ -35,7 +34,8 @@ type
 
 constructor TOneShotTimer.CreateWith(ADelay: cardinal; ACallback: TOneShotCallback; var ExtRef: TTimer);
 begin
-  inherited Create(nil);
+  // Owner is Application to guarantee cleanup if the timer never fires before shutdown
+  inherited Create(Application);
   FCallback := ACallback;
   FUserVar := @ExtRef;
   Interval := ADelay;
@@ -47,16 +47,16 @@ end;
 procedure TOneShotTimer.TimerFire(Sender: TObject);
 begin
   Enabled := False;
+  // Immediately nil the external variable so no one touches a dead object
   if FUserVar <> nil then
     FUserVar^ := nil;
-  if Assigned(FCallback) then
-    FCallback();
-  Application.QueueAsyncCall(@AsyncFree, PtrInt(Self));
-end;
-
-procedure TOneShotTimer.AsyncFree(Data: PtrInt);
-begin
-  TOneShotTimer(Data).Free;
+  try
+    if Assigned(FCallback) then
+      FCallback();
+  finally
+    // Free immediately; the user variable is already nil, and Owner will not double-free
+    Free;
+  end;
 end;
 
 procedure SetTimeout(Delay: cardinal; Callback: TOneShotCallback);
