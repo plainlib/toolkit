@@ -304,7 +304,7 @@ begin
   FForm.BringToFront;
 
   if Duration > 0 then
-    SetTimeoutSafe(FTimer, Duration, @TimerHide);
+    SetTimeout(FTimer, Duration, @TimerHide);
 end;
 
 procedure TOneShotTooltip.TimerHide;

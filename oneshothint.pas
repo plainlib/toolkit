@@ -101,7 +101,7 @@ begin
   else
   begin
     // Schedule hide after Duration ms
-    SetTimeoutSafe(FTimer, Duration, @DoHideHint);
+    SetTimeout(FTimer, Duration, @DoHideHint);
   end;
 
   // Determine maximum width for text calculation
