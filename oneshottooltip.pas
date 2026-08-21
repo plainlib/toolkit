@@ -26,7 +26,7 @@ uses
 type
   TOneShotTooltip = class;
 
-  // Internal hint form – a borderless, top-most window with a read-only Memo and resize grip
+  // Internal hint form - a borderless, top-most window with a read-only Memo and resize grip
   TfrmHint = class(TForm)
   private
     FMemo: TMemo;
@@ -44,6 +44,7 @@ type
     procedure UpdateGripPosition; // recalculates grip placement
   public
     constructor Create(AOwner: TComponent); override;
+    procedure SetBackColor(AColor: TColor); // changes background color of hint content and grip
     property HintMemo: TMemo read FMemo;
   end;
 
@@ -53,6 +54,7 @@ type
     FForm: TfrmHint;
     FTimer: TTimer;        // one-shot timer for auto-hide
     FIsHiding: boolean;    // prevents re-entrant hide calls
+    FAutoFree: boolean;    // if true, component frees itself after hiding
     procedure TimerHide;   // timer callback
     procedure HideHintInternal;
   public
@@ -62,7 +64,16 @@ type
     // Duration = 0  : hint stays until the user clicks outside it
     // Duration > 0  : hint hides after Duration ms (or on outside click)
     // AWidth, AHeight : custom size; 0 means auto-calculate
-    procedure ShowHintText(const AText: string; X, Y: integer; AWidth: integer = 0; AHeight: integer = 0; Duration: integer = 0);
+    // AColor : background color of the hint window
+    procedure ShowHintText(const AText: string; X, Y: integer; AWidth: integer = 0; AHeight: integer = 0;
+      Duration: integer = 0; AColor: TColor = clInfoBk);
+    // Static method for quickly showing a hint without manual lifetime management.
+    // Parameters: AText (text), AWidth (width, 0 = auto), AColor (background color),
+    //   Duration (auto-hide timeout in ms, 0 = no timeout), X,Y (position, 0 = near mouse),
+    //   AHeight (height, 0 = auto).
+    class procedure Show(const AText: string; AWidth: integer = 0; AColor: TColor = clInfoBk; Duration: integer = 0;
+      X: integer = 0; Y: integer = 0; AHeight: integer = 0); static;
+    property AutoFree: boolean read FAutoFree write FAutoFree; // enable auto-free after hide
   end;
 
 implementation
@@ -95,7 +106,7 @@ begin
   FMemo.Color := clInfoBk;               // standard hint background colour
   FMemo.Font.Assign(Screen.HintFont);    // standard hint font
   FMemo.WordWrap := True;
-  FMemo.ScrollBars := ssVertical;            // no scrollbars for a clean look
+  FMemo.ScrollBars := ssVertical;        // vertical scrollbar appears when content overflows
   FMemo.TabStop := False;
 
   // Create an invisible resize grip
@@ -118,6 +129,14 @@ begin
   OnMouseUp := @FormMouseUp;
   OnDeactivate := @FormDeactivate;
   OnResize := @FormResize;               // keep grip in corner when size changes
+end;
+
+procedure TfrmHint.SetBackColor(AColor: TColor);
+begin
+  // Apply the requested background color to the memo, grip, and the form itself
+  FMemo.Color := AColor;
+  FGrip.Color := AColor;
+  Self.Color := AColor;
 end;
 
 procedure TfrmHint.UpdateGripPosition;
@@ -221,6 +240,7 @@ begin
   FForm.FOwnerHint := Self;
   FTimer := nil;
   FIsHiding := False;
+  FAutoFree := False;
 end;
 
 destructor TOneShotTooltip.Destroy;
@@ -230,8 +250,8 @@ begin
   inherited Destroy;
 end;
 
-procedure TOneShotTooltip.ShowHintText(const AText: string; X, Y: integer;
-  AWidth: integer; AHeight: integer; Duration: integer);
+procedure TOneShotTooltip.ShowHintText(const AText: string; X, Y: integer; AWidth: integer; AHeight: integer;
+  Duration: integer; AColor: TColor);
 var
   HtRect: TRect;
   MaxW, W, H: integer;
@@ -292,6 +312,9 @@ begin
   else if Y + H > Screen.WorkAreaHeight then
     Y := Screen.WorkAreaHeight - H;
 
+  // Apply the requested background color before showing
+  FForm.SetBackColor(AColor);
+
   // Set size, text, then show
   FForm.SetBounds(X, Y, W, H);
   FForm.HintMemo.Text := AText;   // safe: Handle exists after HandleNeeded
@@ -309,13 +332,13 @@ end;
 
 procedure TOneShotTooltip.TimerHide;
 begin
-  // Called when the one-shot timer fires – simply hide the hint
+  // Called when the one-shot timer fires - simply hide the hint
   HideHintInternal;
 end;
 
 procedure TOneShotTooltip.HideHintInternal;
 begin
-  if FIsHiding then Exit;   // prevent recursion (e.g. OnDeactivate ⇄ timer)
+  if FIsHiding then Exit;   // prevent recursion (e.g. OnDeactivate and timer)
   FIsHiding := True;
   try
     ClearTimeout(FTimer);                     // cancel any pending timer
@@ -333,6 +356,27 @@ begin
   finally
     FIsHiding := False;
   end;
+  // If auto-free is enabled, schedule the component to be freed after the current message
+  if FAutoFree then
+    Application.ReleaseComponent(Self);
+end;
+
+class procedure TOneShotTooltip.Show(const AText: string; AWidth: integer; AColor: TColor; Duration: integer;
+  X: integer; Y: integer; AHeight: integer);
+var
+  Tooltip: TOneShotTooltip;
+  MousePos: TPoint;
+begin
+  // If no coordinates were specified, show the hint near the current mouse position
+  if (X = 0) and (Y = 0) then
+  begin
+    MousePos := Mouse.CursorPos;
+    X := MousePos.X + 15; // small offset from cursor to avoid covering it
+    Y := MousePos.Y + 15;
+  end;
+  Tooltip := TOneShotTooltip.Create(Application); // Application owns the component for final cleanup
+  Tooltip.AutoFree := True;
+  Tooltip.ShowHintText(AText, X, Y, AWidth, AHeight, Duration, AColor);
 end;
 
 end.
