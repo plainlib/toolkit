@@ -17,6 +17,7 @@ uses
   Controls,
   ExtCtrls,
   Types,
+  Graphics,
   OneShotTimer;
 
 type
@@ -25,9 +26,9 @@ type
   private
     FTimer: TTimer;          // one-shot timer for auto-hide
     FHideOnClick: boolean;   // if True, the hint can be hidden by a mouse click
+    FAutoFree: boolean;      // if True, component frees itself after hiding
     procedure DoHideHint;    // callback for timer
-    procedure MouseDownOutside(Sender: TObject; Button: TMouseButton;
-      Shift: TShiftState; X, Y: Integer);
+    procedure MouseDownOutside(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
     procedure HideHintInternal; // common cleanup and hide
     procedure SetHideOnClick(AValue: boolean);
   public
@@ -37,12 +38,19 @@ type
     // Duration = 0  : hint stays until manually hidden (or clicked, if HideOnClick = True)
     // Duration > 0  : hint hides after Duration ms
     // AWidth, AHeight : custom size; 0 means auto-calculate
-    procedure ShowHintText(const AText: string; X, Y: integer;
-      AWidth: integer = 0; AHeight: integer = 0; Duration: integer = 0);
+    // AColor : background color of the hint window
+    procedure ShowHintText(const AText: string; X, Y: integer; AWidth: integer = 0; AHeight: integer = 0;
+      Duration: integer = 0; AColor: TColor = clInfoBk);
+    // Static method for quick showing a hint without manual lifetime management.
+    // Parameters: AText, AWidth (0 = auto), AColor (background color),
+    //   Duration (0 = no timeout), X, Y (0 = near mouse), AHeight (0 = auto).
+    class procedure Show(const AText: string; AWidth: integer = 0; AColor: TColor = clInfoBk; Duration: integer = 0;
+      X: integer = 0; Y: integer = 0; AHeight: integer = 0); static;
   published
     // Determines whether the hint can be closed by a mouse click.
-    // Default is False – clicks pass through to underlying controls without interference.
+    // Default is False - clicks pass through to underlying controls without interference.
     property HideOnClick: boolean read FHideOnClick write SetHideOnClick default False;
+    property AutoFree: boolean read FAutoFree write FAutoFree; // enable auto-free after hide
   end;
 
 implementation
@@ -54,6 +62,7 @@ begin
   inherited Create(AOwner);
   FTimer := nil;
   FHideOnClick := False;
+  FAutoFree := False;
   // Mouse handler is assigned only when needed
 end;
 
@@ -81,8 +90,8 @@ begin
   end;
 end;
 
-procedure TOneShotHint.ShowHintText(const AText: string; X, Y: integer;
-  AWidth: integer; AHeight: integer; Duration: integer);
+procedure TOneShotHint.ShowHintText(const AText: string; X, Y: integer; AWidth: integer; AHeight: integer;
+  Duration: integer; AColor: TColor);
 var
   HtRect: TRect;
   DisplayPos: TPoint;
@@ -96,7 +105,7 @@ begin
 
   if Duration = 0 then
   begin
-    // No timer – hint must be hidden manually or by click (if HideOnClick is True)
+    // No timer - hint must be hidden manually or by click (if HideOnClick is True)
   end
   else
   begin
@@ -130,6 +139,9 @@ begin
     DisplayPos.Y := Screen.WorkAreaHeight - (HtRect.Bottom - HtRect.Top) - 5;
   OffsetRect(HtRect, DisplayPos.X, DisplayPos.Y);
 
+  // Apply the requested background color before showing
+  Self.Color := AColor;
+
   ActivateHint(HtRect, AText);
 
   // Enable mouse capture only if the hint should react to clicks
@@ -147,12 +159,11 @@ end;
 
 procedure TOneShotHint.DoHideHint;
 begin
-  // Timer fired – hide and release capture
+  // Timer fired - hide and release capture
   HideHintInternal;
 end;
 
-procedure TOneShotHint.MouseDownOutside(Sender: TObject; Button: TMouseButton;
-  Shift: TShiftState; X, Y: Integer);
+procedure TOneShotHint.MouseDownOutside(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
 begin
   // This handler is only active when HideOnClick = True.
   // Coordinates are relative to our client area.
@@ -166,6 +177,29 @@ begin
   Self.MouseCapture := False; // release capture
   Self.OnMouseDown := nil;   // remove the handler
   ReleaseHandle;             // hide the hint window
+  // If auto-free is enabled, schedule the component to be freed after the current message
+  if FAutoFree then
+    Application.ReleaseComponent(Self);
+end;
+
+class procedure TOneShotHint.Show(const AText: string; AWidth: integer; AColor: TColor; Duration: integer;
+  X: integer; Y: integer; AHeight: integer);
+var
+  AHint: TOneShotHint;
+  MousePos: TPoint;
+begin
+  // If no coordinates were specified, show the AHint near the current mouse position
+  if (X = 0) and (Y = 0) then
+  begin
+    MousePos := Mouse.CursorPos;
+    X := MousePos.X + 15; // small offset from cursor to avoid covering it
+    Y := MousePos.Y + 15;
+  end;
+  // Create the AHint component owned by Application and configure it for automatic cleanup
+  AHint := TOneShotHint.Create(Application);
+  AHint.AutoFree := True;
+  AHint.HideOnClick := True; // let the AHint close on mouse click
+  AHint.ShowHintText(AText, X, Y, AWidth, AHeight, Duration, AColor);
 end;
 
 end.
