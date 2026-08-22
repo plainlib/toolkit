@@ -41,6 +41,19 @@
 // OnDone is skipped if CancelAsync was called before the Proc finished.
 // RunAsyncAndWait/RunAsyncAndWaitFunc must not be used from main thread if the
 // called method tries to synchronize with the main thread (deadlock risk).
+//
+// To safely shut down the application when background threads may still be running,
+// call ShutdownThreads and WaitForThreads from the main form's OnClose or OnDestroy:
+//
+//   procedure TForm1.FormClose(Sender: TObject; var CloseAction: TCloseAction);
+//   begin
+//     ShutdownThreads;
+//     WaitForThreads;
+//   end;
+//
+// This ensures all background threads have finished before the form is destroyed.
+// Important: the background methods must periodically check IsCancelled and return,
+// otherwise WaitForThreads may block indefinitely.
 
 unit OneShotThread;
 
@@ -119,7 +132,17 @@ generic function RunAsyncAndWait<T>(Proc: specialize TOneShotResultProc<T>): T;
 // otherwise a deadlock will occur.
 generic function RunAsyncAndWaitFunc<T>(Func: specialize TOneShotResultFunc<T>): T;
 
+// Requests termination of all background threads started by this unit.
+procedure ShutdownThreads;
+
+// Waits until all background threads have finished.
+// Call this after ShutdownThreads, usually when closing the application.
+procedure WaitForThreads;
+
 implementation
+
+uses
+  Forms; // for Application
 
 type
   // Pointer to TThread, needed because inline ^TThread sometimes confuses the compiler
@@ -140,6 +163,14 @@ threadvar
   // Points to the TOneShotThread instance running on this thread, if any
   CurrentOneShotThread: TOneShotThread;
 
+var
+  // Global list of active threads, used to track them for shutdown
+  ThreadList: TThreadList;
+  // Counter of active threads, used to know when all have finished
+  ActiveThreads: Integer;
+  // Flag indicating that the application is shutting down, so OnDone should be skipped
+  IsShuttingDown: Boolean;
+
 constructor TOneShotThread.CreateWith(AProc: TOneShotProc; AOnDone: TOneShotProc; AUserVar: PTThread);
 begin
   FProc := AProc;
@@ -148,6 +179,12 @@ begin
   FreeOnTerminate := True;
   // Create suspended to avoid a race: set the external reference before the thread starts
   inherited Create(True);
+  // Add to global tracking list and increment active counter
+  if ThreadList <> nil then
+  begin
+    ThreadList.Add(Self);
+    InterlockedIncrement(ActiveThreads);
+  end;
   if FUserVar <> nil then
     FUserVar^ := Self;
   Start;
@@ -166,12 +203,19 @@ begin
       // Optionally log the exception here
     end;
   finally
-    CurrentOneShotThread := nil;
     // Immediately nil the external variable so no one touches a dead object
     if FUserVar <> nil then
       FUserVar^ := nil;
-    if Assigned(FOnDone) and not Terminated then
+    // If shutting down, skip OnDone to avoid deadlock with Synchronize
+    if Assigned(FOnDone) and not Terminated and not IsShuttingDown then
       Synchronize(FOnDone);
+    // Remove from global list and decrement active counter
+    if ThreadList <> nil then
+    begin
+      ThreadList.Remove(Self);
+      InterlockedDecrement(ActiveThreads);
+    end;
+    CurrentOneShotThread := nil;
   end;
 end;
 
@@ -288,5 +332,51 @@ begin
     Thread.Free;
   end;
 end;
+
+procedure ShutdownThreads;
+var
+  List: TList;
+  I: Integer;
+begin
+  if ThreadList = nil then Exit;
+  IsShuttingDown := True;
+  List := ThreadList.LockList;
+  try
+    for I := 0 to List.Count - 1 do
+      TThread(List[I]).Terminate;
+  finally
+    ThreadList.UnlockList;
+  end;
+end;
+
+procedure WaitForThreads;
+var
+  Timeout: Cardinal;
+begin
+  Timeout := 5000; // 5 seconds fallback to avoid infinite hang
+  while (InterlockedCompareExchange(ActiveThreads, 0, 0) <> 0) and (Timeout > 0) do
+  begin
+    // Process any pending Synchronize calls to allow threads to finish
+    if Assigned(Application) then
+      Application.ProcessMessages
+    else
+      CheckSynchronize;
+    Sleep(10);
+    Dec(Timeout);
+  end;
+end;
+
+initialization
+  ThreadList := TThreadList.Create;
+  ActiveThreads := 0;
+  IsShuttingDown := False;
+
+finalization
+  // Free the thread list only if no active threads remain
+  if (InterlockedCompareExchange(ActiveThreads, 0, 0) = 0) and (ThreadList <> nil) then
+  begin
+    ThreadList.Free;
+    ThreadList := nil;
+  end;
 
 end.

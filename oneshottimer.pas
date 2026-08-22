@@ -14,6 +14,7 @@ uses
   Classes, SysUtils, ExtCtrls, Forms;
 
 type
+  PTimer = ^TTimer;
   TOneShotCallback = procedure of object;
 
 // Schedules a one-time callback after the specified delay.
@@ -28,26 +29,44 @@ procedure ClearTimeout(var Timer: TTimer);
 
 implementation
 
+var
+  FOneShotTimers: TList; // Stores all active timers
+
 type
   TOneShotTimer = class(TTimer)
   private
     FCallback: TOneShotCallback;
     FUserVar: ^TTimer;
   public
-    constructor CreateWith(ADelay: cardinal; ACallback: TOneShotCallback; var ExtRef: TTimer);
+    constructor CreateWith(ADelay: cardinal; ACallback: TOneShotCallback; AUserVar: PTimer);
+    destructor Destroy; override;
     procedure TimerFire(Sender: TObject);
   end;
 
-constructor TOneShotTimer.CreateWith(ADelay: cardinal; ACallback: TOneShotCallback; var ExtRef: TTimer);
+constructor TOneShotTimer.CreateWith(ADelay: cardinal; ACallback: TOneShotCallback; AUserVar: PTimer);
 begin
-  // Owner is Application to guarantee cleanup if the timer never fires before shutdown
-  inherited Create(Application);
+  // No owner - timer is managed via the global list and freed manually
+  inherited Create(nil);
   FCallback := ACallback;
-  FUserVar := @ExtRef;
+  FUserVar := AUserVar;
   Interval := ADelay;
   OnTimer := @TimerFire;
   Enabled := True;
-  ExtRef := Self;
+  if FUserVar <> nil then
+    FUserVar^ := Self;
+  // Add to global list for guaranteed cleanup
+  FOneShotTimers.Add(Self);
+end;
+
+destructor TOneShotTimer.Destroy;
+begin
+  // Remove from global list
+  FOneShotTimers.Remove(Self);
+  // Clear external reference if still valid (may be nil if already cleared)
+  if FUserVar <> nil then
+    FUserVar^ := nil;
+  FUserVar := nil;
+  inherited Destroy;
 end;
 
 procedure TOneShotTimer.TimerFire(Sender: TObject);
@@ -55,28 +74,28 @@ begin
   Enabled := False;
   // Immediately nil the external variable so no one touches a dead object
   if FUserVar <> nil then
+  begin
     FUserVar^ := nil;
+    FUserVar := nil;
+  end;
   try
     if Assigned(FCallback) then
       FCallback();
   finally
-    // Free immediately; the user variable is already nil, and Owner will not double-free
+    // Free immediately; global list will remove it in destructor
     Free;
   end;
 end;
 
 procedure SetTimeout(Delay: cardinal; Callback: TOneShotCallback);
-var
-  dummy: TTimer;
 begin
-  dummy := nil;
-  TOneShotTimer.CreateWith(Delay, Callback, dummy);
+  TOneShotTimer.CreateWith(Delay, Callback, nil);
 end;
 
 procedure SetTimeout(out Timer: TTimer; Delay: cardinal; Callback: TOneShotCallback);
 begin
   Timer := nil;
-  TOneShotTimer.CreateWith(Delay, Callback, Timer);
+  TOneShotTimer.CreateWith(Delay, Callback, @Timer);
 end;
 
 procedure ClearTimeout(var Timer: TTimer);
@@ -91,5 +110,24 @@ begin
   else
     FreeAndNil(Timer);
 end;
+
+procedure FreeAllOneShotTimers;
+var
+  i: Integer;
+begin
+  // Prevent destructor from writing to possibly destroyed external variables
+  for i := 0 to FOneShotTimers.Count - 1 do
+    TOneShotTimer(FOneShotTimers[i]).FUserVar := nil;
+  // Free all remaining timers
+  while FOneShotTimers.Count > 0 do
+    TOneShotTimer(FOneShotTimers[0]).Free;
+end;
+
+initialization
+  FOneShotTimers := TList.Create;
+
+finalization
+  FreeAllOneShotTimers;
+  FOneShotTimers.Free;
 
 end.
