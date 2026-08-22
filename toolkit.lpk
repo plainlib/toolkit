@@ -79,6 +79,10 @@ SOFTWARE.
         <Filename Value="appinstance.pas"/>
         <UnitName Value="appinstance"/>
       </Item>
+      <Item>
+        <Filename Value="oneshotthread.pas"/>
+        <UnitName Value="oneshotthread"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>

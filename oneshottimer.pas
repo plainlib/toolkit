@@ -1,3 +1,9 @@
+//-----------------------------------------------------------------------------------
+//  Toolkit Package © 2026 by Alexander Tverskoy
+//  Licensed under the MIT License
+//  You may obtain a copy of the License at https://opensource.org/licenses/MIT
+//-----------------------------------------------------------------------------------
+
 unit OneShotTimer;
 
 {$mode objfpc}{$H+}
