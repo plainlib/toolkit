@@ -25,39 +25,40 @@ implementation
 
 uses
   MD5
-  {$IFDEF MSWINDOWS}
+  {$IFDEF WINDOWS}
   , Windows
   , Messages
   , Forms
   {$ELSE}
   , BaseUnix
+  , Unix
   {$ENDIF}
   ;
 
 const
   APP_INSTANCE_PREFIX = 'LazarusAppInstance_';
-  {$IFDEF MSWINDOWS}
+  {$IFDEF WINDOWS}
   WM_APP_INSTANCE = WM_APP + 1001;
   {$ENDIF}
 
 var
   InstanceName: string = '';
+  {$IFDEF WINDOWS}
   MessageEvent: TAppInstanceMessageEvent = nil;
-{$IFDEF MSWINDOWS}
   MutexHandle: THandle = 0;
   InstanceWindow: HWND = 0;
   WindowClassName: string = '';
-{$ELSE}
-  LockFileHandle: Integer = -1;
+  {$ELSE}
+  LockFileHandle: integer = -1;
   LockFileName: string = '';
-{$ENDIF}
+  {$ENDIF}
 
 function GetInstanceName: string;
 begin
   Result := APP_INSTANCE_PREFIX + MD5Print(MD5String(UpperCase(ExpandFileName(ParamStr(0)))));
 end;
 
-{$IFDEF MSWINDOWS}
+{$IFDEF WINDOWS}
 
 function GetWindowClassName: string;
 begin
@@ -141,13 +142,13 @@ end;
 {$ENDIF}
 
 function AcquireSingleInstance: boolean;
-  {$IFDEF MSWINDOWS}
+  {$IFDEF WINDOWS}
 var
   MutexName: string;
   {$ENDIF}
 begin
   Result := False;
-  {$IFDEF MSWINDOWS}
+  {$IFDEF WINDOWS}
   if MutexHandle <> 0 then
     Exit(True);
   {$ELSE}
@@ -157,7 +158,7 @@ begin
 
   InstanceName := GetInstanceName;
 
-  {$IFDEF MSWINDOWS}
+  {$IFDEF WINDOWS}
   MutexName := 'Local\' + InstanceName;
   MutexHandle := CreateMutex(nil, True, PChar(MutexName));
   if MutexHandle = 0 then
@@ -190,7 +191,7 @@ begin
   Result := True;
 end;
 
-{$IFDEF MSWINDOWS}
+{$IFDEF WINDOWS}
 
 function SendToExistingInstance(const AMessage: string): boolean;
 var
@@ -219,7 +220,7 @@ end;
 
 {$ELSE}
 
-function SendToExistingInstance(const AMessage: string): Boolean;
+function SendToExistingInstance(const AMessage: string): boolean;
 begin
   Result := False;
 end;
@@ -228,12 +229,14 @@ end;
 
 procedure SetAppInstanceMessageEvent(AEvent: TAppInstanceMessageEvent);
 begin
+  {$IFDEF WINDOWS}
   MessageEvent := AEvent;
+  {$ENDIF}
 end;
 
 procedure ReleaseSingleInstance;
 begin
-  {$IFDEF MSWINDOWS}
+  {$IFDEF WINDOWS}
   DestroyInstanceWindow;
   if MutexHandle <> 0 then
   begin
