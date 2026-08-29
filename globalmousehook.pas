@@ -24,6 +24,44 @@ uses
   ;
 
 type
+  // Classification of window classes used for mouse events
+  TMouseWindowClass = (
+    wckUnknown,              // unknown or unclassified window class
+    wckComboLBox,            // 'ComboLBox' - popup list of a ComboBox
+    wckScrollBar,            // 'ScrollBar' - standard scrollbar
+    wckUpDown,               // 'msctls_updown32' - up-down (spin) control
+    wckTrackbar,             // 'msctls_trackbar32' - trackbar / slider
+    wckHeader,               // 'SysHeader32' - column header in list view
+    wckToolbar,              // 'ToolbarWindow32' - standard toolbar
+    wckTabControl,           // 'SysTabControl32' - tab control (tabs)
+    wckSystemMenu,           // '#32768' - system menu (popup) / window menu
+    wckTooltip,              // 'tooltips_class32' - tooltip window
+    wckStatic,               // 'Static' - static text / label
+    wckListView,             // 'SysListView32' - classic file list in Explorer
+    wckDirectUIHWND,         // 'DirectUIHWND' - modern Explorer file view (Vista+)
+    wckCtrlNotifySink,       // 'CtrlNotifySink' - sometimes used in Explorer details pane
+    wckShellDocObjectView,   // 'Shell DocObject View' - embedded Explorer views
+    wckConsoleWindow,        // 'ConsoleWindowClass' - classic console (cmd, old PowerShell)
+    wckTerminal,             // 'CASCADIA_HOSTING_WINDOW_CLASS' - Windows Terminal
+    wckEdit,                 // 'Edit' - standard edit control
+    wckRichEdit20A,          // 'RichEdit20A' - RichEdit version 2.0 (ANSI)
+    wckRichEdit20W,          // 'RichEdit20W' - RichEdit version 2.0 (Unicode), used by Outlook and others
+    wckRichEdit50W,          // 'RichEdit50W' - RichEdit version 5.0 (Unicode)
+    wckMemo,                 // 'TMemo' - VCL/LCL memo control
+    wckTEdit,                // 'TEdit' - VCL/LCL single-line edit
+    wckScintilla,            // 'Scintilla' - Scintilla editing component (Notepad++, etc.)
+    wckBrowser,              // 'Chrome_RenderWidgetHostHWND' - Chromium-based browsers (Chrome, Edge)
+    wckMozillaContent,       // 'MozillaContentWindowClass' - Firefox content area
+    wckIEServer,             // 'Internet Explorer_Server' - IE / Trident engine
+    wckOpera,                // 'OperaWindowClass' - older Opera
+    wckUWPCoreWindow,        // 'Windows.UI.Core.CoreWindow' - UWP / WinRT text controls
+    wckMfcView,              // 'Afx:FrameOrView:100' - MFC-based applications
+    wckOutlookMain,          // '_WwG' - main Outlook window (contains editor)
+    wckQWidget,              // 'QWidget' - VirtualBox (older) / Qt main window
+    wckVMwareUnityHostWnd    // 'VMwareUnityHostWnd' - VMware Workstation/Player
+    );
+
+type
   PMouseEventInfo = ^TMouseEventInfo;
 
   TMouseEventInfo = record
@@ -33,6 +71,8 @@ type
     CtrlDown: boolean;
     ShiftDown: boolean;
     AltDown: boolean;
+    WindowClass: TMouseWindowClass;
+    WindowClassName: string[255];
   end;
 
   TMouseEvent = procedure(Sender: TObject; const Info: TMouseEventInfo) of object;
@@ -62,6 +102,7 @@ type
     class var FActiveInstance: TGlobalMouseHook;
     FHook: HHOOK;
     class function HookProc(nCode: Integer; wParam: WPARAM; lParam: LPARAM): LRESULT; stdcall; static;
+    function ClassifyWindowClass(const AClassName: string): TMouseWindowClass;
     procedure InternalMouseEvent(wParam: WPARAM; const p: TMouseLLHookStruct);
     function IsInputWindow(Wnd: THandle): Boolean;
     {$ENDIF}
@@ -89,6 +130,46 @@ const
 implementation
 
 {$IFDEF WINDOWS}
+
+const
+  // Window classes that are always ignored (blacklist)
+  IgnoredWindowClasses: set of TMouseWindowClass = [
+    wckComboLBox, wckScrollBar, wckUpDown, wckTrackbar,
+    wckHeader, wckToolbar, wckTabControl, wckSystemMenu,
+    wckTooltip, wckStatic, wckListView, wckDirectUIHWND,
+    wckCtrlNotifySink, wckShellDocObjectView,
+    wckConsoleWindow, wckTerminal
+  ];
+
+  // Window classes treated as text editing fields (whitelist)
+  TextEditWindowClasses: set of TMouseWindowClass = [
+    wckEdit, wckRichEdit20A, wckRichEdit20W, wckRichEdit50W,
+    wckMemo, wckTEdit, wckScintilla, wckBrowser,
+    wckMozillaContent, wckIEServer, wckOpera,
+    wckUWPCoreWindow, wckMfcView,
+    wckOutlookMain   // added to allow Outlook main window
+  ];
+
+  // Window classes of known virtual machine windows
+  VMWindowClasses: set of TMouseWindowClass = [
+    wckQWidget, wckVMwareUnityHostWnd
+  ];
+
+  // Process names of known virtual machines and emulators
+  VMProcessNames: array[0..2] of string = (
+    'virtualboxvm.exe',
+    'vboxheadless.exe',
+    'vmware-vmx.exe'
+  );
+
+  // Process names for console applications - mouse events are ignored there
+  ConsoleProcessNames: array[0..4] of string = (
+    'conhost.exe',
+    'cmd.exe',
+    'powershell.exe',
+    'pwsh.exe',
+    'windowsterminal.exe'
+  );
 
 class function TGlobalMouseHook.HookProc(nCode: integer; wParam: WPARAM; lParam: LPARAM): LRESULT; stdcall;
 var
@@ -127,69 +208,83 @@ begin
   Result := CallNextHookEx(Hook, nCode, wParam, lParam);
 end;
 
-function TGlobalMouseHook.IsInputWindow(Wnd: THandle): boolean;
-const
-  // Classes that we always ignore (blacklist)
-  IgnoredClasses: array[0..15] of pchar = (
-    'ComboLBox',          // popup list of a ComboBox
-    'ScrollBar',          // standard scrollbar
-    'msctls_updown32',    // up-down (spin) control
-    'msctls_trackbar32',  // trackbar / slider
-    'SysHeader32',        // column header in list view
-    'ToolbarWindow32',    // standard toolbar
-    'SysTabControl32',    // tab control (tabs)
-    '#32768',             // system menu (popup) / window menu
-    'tooltips_class32',   // tooltip window
-    'Static',             // static text / label
-    'SysListView32',      // classic file list in Explorer
-    'DirectUIHWND',       // modern Explorer file view (Vista+)
-    'CtrlNotifySink',     // sometimes used in Explorer details pane
-    'Shell DocObject View', // embedded Explorer views
-    'ConsoleWindowClass', // classic console (cmd, old PowerShell)
-    'CASCADIA_HOSTING_WINDOW_CLASS' // Windows Terminal
-    );
+function TGlobalMouseHook.ClassifyWindowClass(const AClassName: string): TMouseWindowClass;
+begin
+  Result := wckUnknown;
+  if AClassName = '' then Exit;
 
-  // Virtual machine window classes – fast preliminary check
-  VMWindowClasses: array[0..1] of pchar = (
-    'QWidget',            // VirtualBox (older) / Qt main window
-    'VMwareUnityHostWnd'  // VMware Workstation/Player
-    );
+  if StrIComp(PChar(AClassName), 'ComboLBox') = 0 then
+    Result := wckComboLBox
+  else if StrIComp(PChar(AClassName), 'ScrollBar') = 0 then
+    Result := wckScrollBar
+  else if StrIComp(PChar(AClassName), 'msctls_updown32') = 0 then
+    Result := wckUpDown
+  else if StrIComp(PChar(AClassName), 'msctls_trackbar32') = 0 then
+    Result := wckTrackbar
+  else if StrIComp(PChar(AClassName), 'SysHeader32') = 0 then
+    Result := wckHeader
+  else if StrIComp(PChar(AClassName), 'ToolbarWindow32') = 0 then
+    Result := wckToolbar
+  else if StrIComp(PChar(AClassName), 'SysTabControl32') = 0 then
+    Result := wckTabControl
+  else if StrIComp(PChar(AClassName), '#32768') = 0 then
+    Result := wckSystemMenu
+  else if StrIComp(PChar(AClassName), 'tooltips_class32') = 0 then
+    Result := wckTooltip
+  else if StrIComp(PChar(AClassName), 'Static') = 0 then
+    Result := wckStatic
+  else if StrIComp(PChar(AClassName), 'SysListView32') = 0 then
+    Result := wckListView
+  else if StrIComp(PChar(AClassName), 'DirectUIHWND') = 0 then
+    Result := wckDirectUIHWND
+  else if StrIComp(PChar(AClassName), 'CtrlNotifySink') = 0 then
+    Result := wckCtrlNotifySink
+  else if StrIComp(PChar(AClassName), 'Shell DocObject View') = 0 then
+    Result := wckShellDocObjectView
+  else if StrIComp(PChar(AClassName), 'ConsoleWindowClass') = 0 then
+    Result := wckConsoleWindow
+  else if StrIComp(PChar(AClassName), 'CASCADIA_HOSTING_WINDOW_CLASS') = 0 then
+    Result := wckTerminal
+  else if StrIComp(PChar(AClassName), 'Edit') = 0 then
+    Result := wckEdit
+  else if StrIComp(PChar(AClassName), 'RichEdit20A') = 0 then
+    Result := wckRichEdit20A
+  else if StrIComp(PChar(AClassName), 'RichEdit20W') = 0 then
+    Result := wckRichEdit20W
+  else if StrIComp(PChar(AClassName), 'RichEdit50W') = 0 then
+    Result := wckRichEdit50W
+  else if StrIComp(PChar(AClassName), 'TMemo') = 0 then
+    Result := wckMemo
+  else if StrIComp(PChar(AClassName), 'TEdit') = 0 then
+    Result := wckTEdit
+  else if StrIComp(PChar(AClassName), 'Scintilla') = 0 then
+    Result := wckScintilla
+  else if StrIComp(PChar(AClassName), 'Chrome_RenderWidgetHostHWND') = 0 then
+    Result := wckBrowser
+  else if StrIComp(PChar(AClassName), 'MozillaContentWindowClass') = 0 then
+    Result := wckMozillaContent
+  else if StrIComp(PChar(AClassName), 'Internet Explorer_Server') = 0 then
+    Result := wckIEServer
+  else if StrIComp(PChar(AClassName), 'OperaWindowClass') = 0 then
+    Result := wckOpera
+  else if StrIComp(PChar(AClassName), 'Windows.UI.Core.CoreWindow') = 0 then
+    Result := wckUWPCoreWindow
+  else if StrIComp(PChar(AClassName), 'Afx:FrameOrView:100') = 0 then
+    Result := wckMfcView
+  else if StrIComp(PChar(AClassName), '_WwG') = 0 then
+    Result := wckOutlookMain
+  else if StrIComp(PChar(AClassName), 'QWidget') = 0 then
+    Result := wckQWidget
+  else if StrIComp(PChar(AClassName), 'VMwareUnityHostWnd') = 0 then
+    Result := wckVMwareUnityHostWnd;
+end;
 
-  // Classes that are treated as text editing fields (whitelist)
-  TextEditClasses: array[0..11] of pchar = (
-    'Edit',                         // standard edit control
-    'RichEdit20A',                  // RichEdit version 2.0 (ANSI)
-    'RichEdit50W',                  // RichEdit version 5.0 (Unicode)
-    'TMemo',                        // VCL/LCL memo control
-    'TEdit',                        // VCL/LCL single-line edit
-    'Scintilla',                    // Scintilla editing component (Notepad++, etc.)
-    'Chrome_RenderWidgetHostHWND',  // Chromium-based browsers (Chrome, Edge)
-    'MozillaContentWindowClass',    // Firefox content area
-    'Internet Explorer_Server',     // IE / Trident engine
-    'OperaWindowClass',             // older Opera
-    'Windows.UI.Core.CoreWindow',   // UWP / WinRT text controls
-    'Afx:FrameOrView:100'           // MFC-based applications
-    );
-
-  // Process names of known virtual machines and emulators
-  VMProcessNames: array[0..2] of string = (
-    'virtualboxvm.exe',
-    'vboxheadless.exe',
-    'vmware-vmx.exe'
-    );
-
-  // Console process names – mouse events inside these windows are ignored
-  ConsoleProcessNames: array[0..4] of string = (
-    'conhost.exe',
-    'cmd.exe',
-    'powershell.exe',
-    'pwsh.exe',
-    'windowsterminal.exe'
-    );
+function TGlobalMouseHook.IsInputWindow(Wnd: THandle): Boolean;
 type
-  TQueryFullProcessImageNameW = function(hProcess: THandle; dwFlags: DWORD; lpExeName: pwidechar; lpdwSize: LPDWORD): BOOL; stdcall;
+  TQueryFullProcessImageNameW = function(hProcess: THandle; dwFlags: DWORD; lpExeName: PWideChar; lpdwSize: LPDWORD): BOOL; stdcall;
 var
   szClass: array[0..255] of char;
+  cls: TMouseWindowClass;
   i: integer;
   pid: DWORD;
   hProc: THandle;
@@ -202,9 +297,6 @@ var
   hKernel32: THandle;
   isVM: boolean;
 
-//---------------------------------------------------------------
-// Helper – returns True if the window belongs to a VM process
-//---------------------------------------------------------------
   function WindowBelongsToVM(Wnd: THandle): boolean;
   var
     pidLocal: DWORD;
@@ -224,7 +316,7 @@ var
       fLen := MAX_PATH;
       if QueryFull(hP, 0, @fname[0], @fLen) then
       begin
-        SetString(nameStr, pwidechar(@fname[0]), fLen);
+        SetString(nameStr, PWideChar(@fname[0]), fLen);
         k := LastDelimiter('\', string(nameStr));
         if k > 0 then
           ext := LowerCase(Copy(string(nameStr), k + 1, MaxInt))
@@ -239,7 +331,6 @@ var
     end;
   end;
 
-  // Returns True if the window belongs to a console host process
   function IsConsoleProcess(Wnd: THandle): boolean;
   var
     pidLocal: DWORD;
@@ -267,7 +358,7 @@ var
       fLen := MAX_PATH;
       if QueryFull(hP, 0, @fname[0], @fLen) then
       begin
-        SetString(nameStr, pwidechar(@fname[0]), fLen);
+        SetString(nameStr, PWideChar(@fname[0]), fLen);
         k := LastDelimiter('\', string(nameStr));
         if k > 0 then
           ext := LowerCase(Copy(string(nameStr), k + 1, MaxInt))
@@ -286,32 +377,28 @@ begin
   Result := False;
   if Wnd = 0 then Exit;
 
-  // Load kernel function once per call (can be cached in a class field)
   hKernel32 := GetModuleHandle('kernel32.dll');
   if hKernel32 <> 0 then
     Pointer(QueryFull) := GetProcAddress(hKernel32, 'QueryFullProcessImageNameW')
   else
     Pointer(QueryFull) := nil;
 
-  // Get window class name
   if GetClassName(HWND(Wnd), szClass, Length(szClass)) > 0 then
   begin
-    // 0. IMMEDIATE REJECTION – virtual machine window classes
-    for i := Low(VMWindowClasses) to High(VMWindowClasses) do
-      if StrIComp(szClass, VMWindowClasses[i]) = 0 then
-        Exit(False);
+    cls := ClassifyWindowClass(szClass);
 
-    // 1. Reject ignored classes (blacklist)
-    for i := Low(IgnoredClasses) to High(IgnoredClasses) do
-      if StrIComp(szClass, IgnoredClasses[i]) = 0 then
-        Exit(False);
+    // Immediate rejection for known VM window classes
+    if cls in VMWindowClasses then
+      Exit(False);
 
-    // ------------------------------------------------------------
-    // 2. MODE: not EditFieldOnly
-    // ------------------------------------------------------------
+    // Reject blacklisted window classes
+    if cls in IgnoredWindowClasses then
+      Exit(False);
+
+    // If not EditFieldOnly mode, allow all windows except processes blacklist
     if not FEditFieldOnly then
     begin
-      // a) Reject windows owned by explorer.exe
+      // Reject explorer.exe
       if Assigned(QueryFull) then
       begin
         GetWindowThreadProcessId(HWND(Wnd), @pid);
@@ -321,9 +408,9 @@ begin
           len := MAX_PATH;
           if QueryFull(hProc, 0, @fileName[0], @len) then
           begin
-            SetString(s, pwidechar(@fileName[0]), len);
+            SetString(s, PWideChar(@fileName[0]), len);
             j := LastDelimiter('\', string(s));
-            if (j > 0) and (StrIComp(pwidechar(@s[j + 1]), 'explorer.exe') = 0) then
+            if (j > 0) and (StrIComp(PWideChar(@s[j + 1]), 'explorer.exe') = 0) then
             begin
               CloseHandle(hProc);
               Exit(False);
@@ -333,36 +420,26 @@ begin
         end;
       end;
 
-      // b) Reject windows owned by known VM processes
-      if Assigned(QueryFull) then
-      begin
-        if WindowBelongsToVM(Wnd) then
-          Exit(False);
-      end;
+      // Reject VM processes
+      if Assigned(QueryFull) and WindowBelongsToVM(Wnd) then
+        Exit(False);
 
-      // c) Reject windows owned by console processes (cmd, powershell, terminal)
-      if Assigned(QueryFull) then
-      begin
-        if IsConsoleProcess(Wnd) then
-          Exit(False);
-      end;
+      // Reject console processes
+      if Assigned(QueryFull) and IsConsoleProcess(Wnd) then
+        Exit(False);
 
-      // All remaining windows are valid input targets
+      // All remaining windows are allowed
       Exit(True);
     end;
 
-    // ------------------------------------------------------------
-    // 3. MODE: EditFieldOnly
-    // ------------------------------------------------------------
-    // First, check if the class is a known text editor
-    for i := Low(TextEditClasses) to High(TextEditClasses) do
-      if StrIComp(szClass, TextEditClasses[i]) = 0 then
-        Exit(True);
+    // EditFieldOnly mode: first check if class is in the text editing whitelist
+    if cls in TextEditWindowClasses then
+      Exit(True);
 
-    // Unknown class – perform process-based checks BEFORE EM_GETSEL
+    // Unknown class - try EM_GETSEL after process checks
     if Assigned(QueryFull) then
     begin
-      // a) Reject explorer.exe
+      // Reject explorer.exe
       GetWindowThreadProcessId(HWND(Wnd), @pid);
       hProc := OpenProcess(PROCESS_QUERY_INFORMATION, False, pid);
       if hProc <> 0 then
@@ -370,9 +447,9 @@ begin
         len := MAX_PATH;
         if QueryFull(hProc, 0, @fileName[0], @len) then
         begin
-          SetString(s, pwidechar(@fileName[0]), len);
+          SetString(s, PWideChar(@fileName[0]), len);
           j := LastDelimiter('\', string(s));
-          if (j > 0) and (StrIComp(pwidechar(@s[j + 1]), 'explorer.exe') = 0) then
+          if (j > 0) and (StrIComp(PWideChar(@s[j + 1]), 'explorer.exe') = 0) then
           begin
             CloseHandle(hProc);
             Exit(False);
@@ -381,26 +458,17 @@ begin
         CloseHandle(hProc);
       end;
 
-      // b) Reject VM processes
-      if WindowBelongsToVM(Wnd) then
+      if WindowBelongsToVM(Wnd) or IsConsoleProcess(Wnd) then
         Exit(False);
 
-      // c) Reject windows owned by console processes (cmd, powershell, terminal)
-      if IsConsoleProcess(Wnd) then
-        Exit(False);
-
-      // c) If the window belongs to none of the above, try EM_GETSEL
-      //    (allows non‑standard editors that support this message)
       if SendMessageTimeout(HWND(Wnd), EM_GETSEL, WPARAM(@dwStart), LPARAM(@dwEnd), SMTO_ABORTIFHUNG,
         20, nil) <> 0 then
         Exit(True);
     end;
 
-    // Not a recognised editor – reject
     Exit(False);
   end;
 
-  // Should never reach here (GetClassName failed)
   Exit(False);
 end;
 
@@ -438,6 +506,16 @@ begin
 
   // 4. Find the window under the cursor and check if it's a valid input target
   wndHandle := THandle(WindowFromPoint(p.pt));
+
+  // Get window class name and classification
+  FillChar(info.WindowClassName[1], SizeOf(info.WindowClassName) - 1, #0);
+  info.WindowClassName[0] := #0;
+  if wndHandle <> 0 then
+  begin
+    GetClassName(wndHandle, @info.WindowClassName[1], SizeOf(info.WindowClassName) - 2);
+    info.WindowClassName[0] := Char(StrLen(@info.WindowClassName[1]));
+  end;
+  info.WindowClass := ClassifyWindowClass(info.WindowClassName);
 
   if not IsInputWindow(wndHandle) then
   begin
