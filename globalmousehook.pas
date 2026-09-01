@@ -99,6 +99,7 @@ type
     FOnMiddleDown, FOnMiddleUp: TMouseEvent;
     FLeftDownAccepted: boolean;
     FIgnoredWindows: TList;
+    FSkipUntilTick: uint64;
     procedure SetEnabled(AValue: boolean);
     {$IFDEF WINDOWS}
     class var FActiveInstance: TGlobalMouseHook;
@@ -107,6 +108,7 @@ type
     function ClassifyWindowClass(const AClassName: string): TMouseWindowClass;
     procedure InternalMouseEvent(wParam: WPARAM; const p: TMouseLLHookStruct);
     function IsInputWindow(Wnd: THandle): Boolean;
+    procedure DoSetHook(AValue: boolean);
     {$ENDIF}
   public
     constructor Create;
@@ -114,6 +116,8 @@ type
     procedure AddIgnoredWindow(AHandle: THandle);
     procedure RemoveIgnoredWindow(AHandle: THandle);
     class function GetActiveInstance: TGlobalMouseHook; static;
+    procedure Pause;
+    procedure Resume;
     property Enabled: boolean read FEnabled write SetEnabled;
     property EditFieldOnly: boolean read FEditFieldOnly write FEditFieldOnly;
     property OnLeftDown: TMouseEvent read FOnLeftDown write FOnLeftDown;
@@ -203,7 +207,10 @@ begin
       WM_MBUTTONDOWN, WM_MBUTTONUP:
       begin
         p := PMouseLLHookStruct(Pointer(PtrUInt(lParam)));
-        Instance.InternalMouseEvent(wParam, p^);
+       if GetTickCount64 < Instance.FSkipUntilTick then
+          // Skip events that arrive immediately after hook installation
+        else
+          Instance.InternalMouseEvent(wParam, p^);
       end;
       // all other messages (move, wheel, etc.) are passed through without any processing
     end;
@@ -477,6 +484,37 @@ begin
   Exit(False);
 end;
 
+procedure TGlobalMouseHook.DoSetHook(AValue: boolean);
+begin
+  if AValue then
+  begin
+    if (FHook = 0) and (FActiveInstance = nil) then
+    begin
+      FHook := SetWindowsHookEx(WH_MOUSE_LL, @HookProc, 0, 0);
+      if FHook <> 0 then
+      begin
+        FActiveInstance := Self;
+        FEnabled := True;
+        // Ignore mouse events for 150 ms to avoid processing messages left from combo box closing
+        FSkipUntilTick := GetTickCount64 + 150;
+      end;
+    end;
+  end
+  else
+  begin
+    if FActiveInstance = Self then
+    begin
+      if FHook <> 0 then
+      begin
+        UnhookWindowsHookEx(FHook);
+        FHook := 0;
+      end;
+      FActiveInstance := nil;
+    end;
+    FEnabled := False;
+  end;
+end;
+
 procedure TGlobalMouseHook.InternalMouseEvent(wParam: WPARAM; const p: TMouseLLHookStruct);
 var
   handler: TMouseEvent;
@@ -582,6 +620,7 @@ begin
   FEnabled := False;
   FEditFieldOnly := False;
   FIgnoredWindows := TList.Create;
+  FSkipUntilTick := 0;
 end;
 
 destructor TGlobalMouseHook.Destroy;
@@ -594,6 +633,16 @@ end;
 class function TGlobalMouseHook.GetActiveInstance: TGlobalMouseHook;
 begin
   Result := FActiveInstance;
+end;
+
+procedure TGlobalMouseHook.Pause;
+begin
+  DoSetHook(False);
+end;
+
+procedure TGlobalMouseHook.Resume;
+begin
+  DoSetHook(True);
 end;
 
 procedure TGlobalMouseHook.AddIgnoredWindow(AHandle: THandle);
@@ -614,60 +663,27 @@ begin
 end;
 
 procedure TGlobalMouseHook.SetEnabled(AValue: boolean);
-
-  function IsWindowsXP: boolean;
-  begin
-    // Windows XP has major version 5 and minor version 1
-    Result := (Win32MajorVersion = 5) and (Win32MinorVersion = 1);
-  end;
-
-  function hMod: HINST;
-  begin
-    if IsWindowsXP then
-      Result := HInstance
-    else
-      Result := 0;
-  end;
-
 begin
   if FEnabled = AValue then Exit;
   if AValue then
   begin
     if FActiveInstance <> nil then
       raise Exception.Create('Only one TGlobalMouseHook can be active at a time.');
-
-    // Try to install the hook. HInstance is used for XP safety (error 1428 may still occur).
-    FHook := SetWindowsHookEx(WH_MOUSE_LL, @HookProc, HMod, 0);
-    if FHook = 0 then
+    DoSetHook(True);
+    // Additional error reporting only for SetEnabled
+    if (FHook = 0) and FEnabled then
     begin
-      // Hook installation failed – keep FActiveInstance nil and FEnabled false.
-      // Show a warning instead of crashing, especially important for XP.
+      // Hook installation failed, but DoSetHook did not show message.
       MessageBox(0,
         PChar('Cannot enable global mouse hook.' + sLineBreak + 'System error: ' +
         SysErrorMessage(GetLastError)),
         'Trayslate',
         MB_ICONWARNING);
-      Exit;   // FEnabled stays False, FActiveInstance stays nil
+      FEnabled := False;
     end;
-
-    // Success – mark as active
-    FActiveInstance := Self;
-    FEnabled := True;
   end
   else
-  begin
-    // Disable: only unhook if we are the active instance
-    if FActiveInstance = Self then
-    begin
-      if FHook <> 0 then
-      begin
-        UnhookWindowsHookEx(FHook);
-        FHook := 0;
-      end;
-      FActiveInstance := nil;
-    end;
-    FEnabled := False;
-  end;
+    DoSetHook(False);
 end;
 
 class function TGlobalMouseHook.IsCtrlPressed: boolean;
