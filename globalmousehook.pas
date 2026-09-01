@@ -16,7 +16,8 @@ interface
 
 uses
   SysUtils,
-  Controls
+  Controls,
+  Classes
   {$IFDEF WINDOWS}
   , Windows
   , Messages
@@ -97,6 +98,7 @@ type
     FOnRightDown, FOnRightUp: TMouseEvent;
     FOnMiddleDown, FOnMiddleUp: TMouseEvent;
     FLeftDownAccepted: boolean;
+    FIgnoredWindows: TList;
     procedure SetEnabled(AValue: boolean);
     {$IFDEF WINDOWS}
     class var FActiveInstance: TGlobalMouseHook;
@@ -109,6 +111,9 @@ type
   public
     constructor Create;
     destructor Destroy; override;
+    procedure AddIgnoredWindow(AHandle: THandle);
+    procedure RemoveIgnoredWindow(AHandle: THandle);
+    class function GetActiveInstance: TGlobalMouseHook; static;
     property Enabled: boolean read FEnabled write SetEnabled;
     property EditFieldOnly: boolean read FEditFieldOnly write FEditFieldOnly;
     property OnLeftDown: TMouseEvent read FOnLeftDown write FOnLeftDown;
@@ -479,6 +484,7 @@ var
   wndHandle: THandle;
   R: TRect;
   Pt: TPoint;
+  i: integer;
 begin
   // 1. Determine which handler (if any) is assigned for this message type
   case wParam of
@@ -506,6 +512,16 @@ begin
 
   // 4. Find the window under the cursor and check if it's a valid input target
   wndHandle := THandle(WindowFromPoint(p.pt));
+
+  // Check if this window or its ancestor is in the ignored list
+  if FIgnoredWindows <> nil then
+  begin
+    for i := 0 to FIgnoredWindows.Count - 1 do
+    begin
+      if (THandle(FIgnoredWindows[i]) = wndHandle) or IsChild(THandle(FIgnoredWindows[i]), wndHandle) then
+        Exit; // Ignore events inside hint window
+    end;
+  end;
 
   // Get window class name and classification
   FillChar(info.WindowClassName[1], SizeOf(info.WindowClassName) - 1, #0);
@@ -565,12 +581,36 @@ begin
   FHook := 0;
   FEnabled := False;
   FEditFieldOnly := False;
+  FIgnoredWindows := TList.Create;
 end;
 
 destructor TGlobalMouseHook.Destroy;
 begin
   Enabled := False;      // safe cleanup – see SetEnabled
+  FreeAndNil(FIgnoredWindows);
   inherited;
+end;
+
+class function TGlobalMouseHook.GetActiveInstance: TGlobalMouseHook;
+begin
+  Result := FActiveInstance;
+end;
+
+procedure TGlobalMouseHook.AddIgnoredWindow(AHandle: THandle);
+begin
+  if FIgnoredWindows = nil then Exit;
+  if FIgnoredWindows.IndexOf(Pointer(AHandle)) < 0 then
+    FIgnoredWindows.Add(Pointer(AHandle));
+end;
+
+procedure TGlobalMouseHook.RemoveIgnoredWindow(AHandle: THandle);
+var
+  idx: integer;
+begin
+  if FIgnoredWindows = nil then Exit;
+  idx := FIgnoredWindows.IndexOf(Pointer(AHandle));
+  if idx >= 0 then
+    FIgnoredWindows.Delete(idx);
 end;
 
 procedure TGlobalMouseHook.SetEnabled(AValue: boolean);

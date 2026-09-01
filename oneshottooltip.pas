@@ -21,7 +21,8 @@ uses
   Types,
   LCLIntf,
   LCLType,
-  OneShotTimer;
+  OneShotTimer,
+  GlobalMouseHook;
 
 type
   TOneShotTooltip = class;
@@ -57,6 +58,8 @@ type
     FAutoFree: boolean;    // if true, component frees itself after hiding
     procedure TimerHide;   // timer callback
     procedure HideHintInternal;
+    procedure ScreenActiveFormChange(Sender: TObject; AForm: TCustomForm);
+    procedure AppDeactivate(Sender: TObject);
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -323,8 +326,27 @@ begin
   FForm.UpdateGripPosition;
   FForm.FGrip.BringToFront;       // stay above the memo
 
-  FForm.Show;
-  FForm.BringToFront;
+  // Set popup parent to keep hint above the calling form without activating other windows
+  if Screen.ActiveForm <> nil then
+  begin
+    FForm.PopupMode := pmAuto;
+    FForm.PopupParent := Screen.ActiveForm;
+  end
+  else
+  begin
+    FForm.PopupMode := pmNone;
+    FForm.PopupParent := nil;
+  end;
+
+  // Subscribe to focus-change events to auto-hide when user clicks outside
+  Screen.AddHandlerActiveFormChanged(@ScreenActiveFormChange);
+  Application.AddOnDeactivateHandler(@AppDeactivate);
+
+  // Add hint window to global mouse hook ignore list
+  if TGlobalMouseHook.GetActiveInstance <> nil then
+    TGlobalMouseHook.GetActiveInstance.AddIgnoredWindow(FForm.Handle);
+
+  FForm.Show; // Now the hint appears as a popup of the active form
 
   if Duration > 0 then
     SetTimeout(FTimer, Duration, @TimerHide);
@@ -344,6 +366,14 @@ begin
     ClearTimeout(FTimer);                     // cancel any pending timer
     if Assigned(FForm) then
     begin
+      // Unsubscribe from focus-change events
+      Screen.RemoveHandlerActiveFormChanged(@ScreenActiveFormChange);
+      Application.RemoveOnDeactivateHandler(@AppDeactivate);
+
+      // Remove hint window from global mouse hook ignore list
+      if FForm.HandleAllocated and (TGlobalMouseHook.GetActiveInstance <> nil) then
+        TGlobalMouseHook.GetActiveInstance.RemoveIgnoredWindow(FForm.Handle);
+
       // Detach deactivate handler so hiding won't re-trigger it
       FForm.OnDeactivate := nil;
       try
@@ -359,6 +389,19 @@ begin
   // If auto-free is enabled, schedule the component to be freed after the current message
   if FAutoFree then
     Application.ReleaseComponent(Self);
+end;
+
+procedure TOneShotTooltip.ScreenActiveFormChange(Sender: TObject; AForm: TCustomForm);
+begin
+  // Close hint if the newly active form is not our hint form
+  if (AForm <> FForm) then
+    HideHintInternal;
+end;
+
+procedure TOneShotTooltip.AppDeactivate(Sender: TObject);
+begin
+  // Application lost focus (user clicked outside, e.g., Start menu)
+  HideHintInternal;
 end;
 
 class procedure TOneShotTooltip.Show(const AText: string; AWidth: integer; AColor: TColor; Duration: integer;
