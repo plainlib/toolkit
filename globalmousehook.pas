@@ -99,7 +99,7 @@ type
     FOnMiddleDown, FOnMiddleUp: TMouseEvent;
     FLeftDownAccepted: boolean;
     FIgnoredWindows: TList;
-    FSkipUntilTick: uint64;
+    FSkipUntilTick: DWORD;
     procedure SetEnabled(AValue: boolean);
     {$IFDEF WINDOWS}
     class var FActiveInstance: TGlobalMouseHook;
@@ -207,7 +207,7 @@ begin
       WM_MBUTTONDOWN, WM_MBUTTONUP:
       begin
         p := PMouseLLHookStruct(Pointer(PtrUInt(lParam)));
-       if GetTickCount64 < Instance.FSkipUntilTick then
+        if GetTickCount < Instance.FSkipUntilTick then
           // Skip events that arrive immediately after hook installation
         else
           Instance.InternalMouseEvent(wParam, p^);
@@ -485,18 +485,25 @@ begin
 end;
 
 procedure TGlobalMouseHook.DoSetHook(AValue: boolean);
+var
+  hMod: HINST;   // Module handle for SetWindowsHookEx, special case for Windows XP
 begin
   if AValue then
   begin
     if (FHook = 0) and (FActiveInstance = nil) then
     begin
-      FHook := SetWindowsHookEx(WH_MOUSE_LL, @HookProc, 0, 0);
+      // Use HInstance on Windows XP to avoid error 1428; use 0 on newer systems
+      if (Win32MajorVersion = 5) and (Win32MinorVersion = 1) then
+        hMod := HInstance
+      else
+        hMod := 0;
+      FHook := SetWindowsHookEx(WH_MOUSE_LL, @HookProc, hMod, 0);
       if FHook <> 0 then
       begin
         FActiveInstance := Self;
         FEnabled := True;
         // Ignore mouse events for 150 ms to avoid processing messages left from combo box closing
-        FSkipUntilTick := GetTickCount64 + 150;
+        FSkipUntilTick := GetTickCount + 150;
       end;
     end;
   end
@@ -670,10 +677,9 @@ begin
     if FActiveInstance <> nil then
       raise Exception.Create('Only one TGlobalMouseHook can be active at a time.');
     DoSetHook(True);
-    // Additional error reporting only for SetEnabled
-    if (FHook = 0) and FEnabled then
+    // Report error if hook installation failed
+    if FHook = 0 then
     begin
-      // Hook installation failed, but DoSetHook did not show message.
       MessageBox(0,
         PChar('Cannot enable global mouse hook.' + sLineBreak + 'System error: ' +
         SysErrorMessage(GetLastError)),
