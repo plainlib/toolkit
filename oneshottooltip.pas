@@ -39,8 +39,8 @@ type
     FResizeStartSize: TPoint;          // form size at start (Width, Height)
     procedure FormDeactivate(Sender: TObject);
     procedure GripMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
-    procedure FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: integer);
     procedure FormMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
+    procedure FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: integer);
     procedure FormResize(Sender: TObject);
     procedure GripPaint(Sender: TObject);
     procedure UpdateGripPosition;      // recalculates grip placement
@@ -81,7 +81,7 @@ const
   GRIP_MARGIN_RIGHT = 2;
   GRIP_MARGIN_BOTTOM = 2;
 
-{ TfrmHint }
+  { TfrmHint }
 
 constructor TfrmHint.Create(AOwner: TComponent);
 begin
@@ -99,6 +99,7 @@ begin
   FMemo.ReadOnly := True;
   FMemo.Color := clInfoBk;
   FMemo.Font.Assign(Screen.HintFont);
+  FMemo.Font.Color := clWindowText;
   FMemo.WordWrap := True;
   FMemo.ScrollBars := ssVertical;
   FMemo.TabStop := False;
@@ -113,12 +114,13 @@ begin
   FGrip.ShowHint := False;
   FGrip.TabStop := False;
   FGrip.OnMouseDown := @GripMouseDown;
+  FGrip.OnMouseMove := @FormMouseMove;
+  FGrip.OnMouseUp := @FormMouseUp;
   FGrip.OnPaint := @GripPaint;
-
   FResizing := False;
 
-  OnMouseMove := @FormMouseMove;
-  OnMouseUp := @FormMouseUp;
+  //OnMouseMove := @FormMouseMove;
+  //OnMouseUp := @FormMouseUp;
   OnDeactivate := @FormDeactivate;
   OnResize := @FormResize;
 end;
@@ -175,7 +177,16 @@ begin
     FResizing := True;
     FResizeStartPos := Mouse.CursorPos;
     FResizeStartSize := Point(ClientWidth, ClientHeight);
-    Self.MouseCapture := True;
+    SetCapture(FGrip.Handle);
+  end;
+end;
+
+procedure TfrmHint.FormMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
+begin
+  if FResizing and (Button = mbLeft) then
+  begin
+    FResizing := False;
+    ReleaseCapture;
   end;
 end;
 
@@ -194,15 +205,6 @@ begin
     if NewW < 100 then NewW := 100;
     if NewH < 20 then NewH := 20;
     SetBounds(Left, Top, NewW, NewH);
-  end;
-end;
-
-procedure TfrmHint.FormMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
-begin
-  if FResizing and (Button = mbLeft) then
-  begin
-    FResizing := False;
-    Self.MouseCapture := False;
   end;
 end;
 
@@ -294,8 +296,10 @@ begin
   if X = 0 then X := Screen.Width - W - 20;
   if Y = 0 then Y := Screen.WorkAreaHeight - H - 5;
 
-  if X < 0 then X := 0 else if X + W > Screen.WorkAreaWidth then X := Screen.WorkAreaWidth - W;
-  if Y < 0 then Y := 0 else if Y + H > Screen.WorkAreaHeight then Y := Screen.WorkAreaHeight - H;
+  if X < 0 then X := 0
+  else if X + W > Screen.WorkAreaWidth then X := Screen.WorkAreaWidth - W;
+  if Y < 0 then Y := 0
+  else if Y + H > Screen.WorkAreaHeight then Y := Screen.WorkAreaHeight - H;
 
   FForm.SetBackColor(AColor);
   FForm.SetBounds(X, Y, W, H);

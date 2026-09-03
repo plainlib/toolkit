@@ -744,6 +744,31 @@ begin
   Result := False;
 end;
 
+procedure TGlobalMouseHook.AddIgnoredWindow(AHandle: THandle);
+begin
+  // No hook on non-Windows platforms, nothing to do
+end;
+
+procedure TGlobalMouseHook.RemoveIgnoredWindow(AHandle: THandle);
+begin
+  // No hook on non-Windows platforms, nothing to do
+end;
+
+class function TGlobalMouseHook.GetActiveInstance: TGlobalMouseHook;
+begin
+  Result := nil; // No active instance on non-Windows platforms
+end;
+
+procedure TGlobalMouseHook.Pause;
+begin
+  // Not supported on non-Windows platforms
+end;
+
+procedure TGlobalMouseHook.Resume;
+begin
+  // Not supported on non-Windows platforms
+end;
+
 {$ENDIF}
 
 end.
