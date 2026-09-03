@@ -56,6 +56,7 @@ type
     FTimer: TTimer;        // one-shot timer for auto-hide
     FIsHiding: boolean;    // prevents re-entrant hide calls
     FAutoFree: boolean;    // if true, component frees itself after hiding
+    FOnHide: TNotifyEvent;
     procedure TimerHide;   // timer callback
     procedure HideHintInternal;
     procedure ScreenActiveFormChange(Sender: TObject; AForm: TCustomForm);
@@ -74,9 +75,11 @@ type
     // Parameters: AText (text), AWidth (width, 0 = auto), AColor (background color),
     //   Duration (auto-hide timeout in ms, 0 = no timeout), X,Y (position, 0 = near mouse),
     //   AHeight (height, 0 = auto).
+    procedure Hide;
     class procedure Show(const AText: string; AWidth: integer = 0; AColor: TColor = clInfoBk; Duration: integer = 0;
       X: integer = 0; Y: integer = 0; AHeight: integer = 0); static;
     property AutoFree: boolean read FAutoFree write FAutoFree; // enable auto-free after hide
+    property OnHide: TNotifyEvent read FOnHide write FOnHide;
   end;
 
 implementation
@@ -352,6 +355,11 @@ begin
     SetTimeout(FTimer, Duration, @TimerHide);
 end;
 
+procedure TOneShotTooltip.Hide;
+begin
+  HideHintInternal;
+end;
+
 procedure TOneShotTooltip.TimerHide;
 begin
   // Called when the one-shot timer fires - simply hide the hint
@@ -386,6 +394,10 @@ begin
   finally
     FIsHiding := False;
   end;
+
+  if Assigned(FOnHide) then
+    FOnHide(Self);
+
   // If auto-free is enabled, schedule the component to be freed after the current message
   if FAutoFree then
     Application.ReleaseComponent(Self);

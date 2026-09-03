@@ -3,7 +3,6 @@
   <Package Version="5">
     <PathDelim Value="\"/>
     <Name Value="toolkit"/>
-    <Type Value="RunTimeOnly"/>
     <Author Value="Alexander Tverskoy (astverskoy@gmail.com)"/>
     <CompilerOptions>
       <Version Value="11"/>
@@ -70,10 +69,6 @@ SOFTWARE.
       <Item>
         <Filename Value="oneshottooltip.pas"/>
         <UnitName Value="OneShotTooltip"/>
-      </Item>
-      <Item>
-        <Filename Value="flatbutton.pas"/>
-        <UnitName Value="flatbutton"/>
       </Item>
       <Item>
         <Filename Value="appinstance.pas"/>
