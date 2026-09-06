@@ -78,6 +78,10 @@ SOFTWARE.
         <Filename Value="oneshotthread.pas"/>
         <UnitName Value="oneshotthread"/>
       </Item>
+      <Item>
+        <Filename Value="downloader.pas"/>
+        <UnitName Value="downloader"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
