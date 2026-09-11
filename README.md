@@ -242,6 +242,36 @@ begin
 end;
 ```
 
+## Downloader
+
+**Unit**: `Downloader.pas`
+
+Asynchronous multi‑URL downloader.  
+Downloads files into `TMemoryStream` objects and reports per‑URL errors through a completion callback.  
+On Windows it uses WinInet with an FPHTTPClient fallback; on other platforms it uses FPHTTPClient and can fall back to `curl` or `wget`. HTTPS works when OpenSSL is available (`IsSSLAvailable`). The callback runs in the main thread via `Synchronize`; failed entries contain a `nil` stream and an error string.
+
+```pascal
+uses Downloader;
+
+procedure TForm1.FormCreate(Sender: TObject);
+begin
+  DownloadFiles(['https://example.com/file1.txt',
+                 'https://example.com/file2.txt'], @OnDownloadComplete);
+end;
+
+procedure TForm1.OnDownloadComplete(Sender: TObject;
+  AStreams: array of TMemoryStream; AErrors: array of string);
+var
+  i: Integer;
+begin
+  for i := 0 to High(AStreams) do
+    if AErrors[i] = '' then
+      AStreams[i].SaveToFile('file' + IntToStr(i + 1) + '.dat')
+    else
+      ShowMessage(AErrors[i]);
+end;
+```
+
 ---
 
 ## License
