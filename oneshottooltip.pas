@@ -308,9 +308,18 @@ begin
   FForm.UpdateGripPosition;
   FForm.FGrip.BringToFront;
 
-  // No PopupParent / PopupMode, no ScreenActiveFormChange
-  // Only Application.OnDeactivate is used (fires when app loses focus,
-  // not when clicking inside the app). FormDeactivate handles clicks outside.
+  // Set popup parent so the hint stays above the calling form
+  // and is not covered by other forms of the application
+  if Screen.ActiveForm <> nil then
+  begin
+    FForm.PopupMode := pmAuto;
+    FForm.PopupParent := Screen.ActiveForm;
+  end
+  else
+  begin
+    FForm.PopupMode := pmNone;
+    FForm.PopupParent := nil;
+  end;
 
   Application.AddOnDeactivateHandler(@AppDeactivate);
 
