@@ -25,7 +25,6 @@ interface
 uses
   Classes,
   SysUtils,
-  Process,
   fphttpclient,
   openssl,
   opensslsockets,
@@ -34,9 +33,11 @@ uses
   {$ENDIF}
   {$IFDEF Linux}
   Unix,
+  Process,
   {$ENDIF}
   {$IFDEF MacOS}
   MacOSAll,
+  Process,
   {$ENDIF}
   LResources;
 
