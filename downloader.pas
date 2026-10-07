@@ -130,14 +130,20 @@ var
   BytesRead: DWORD = 0;
   status: DWORD;
   statusSize: DWORD;
+  timeout: DWORD = 10000;
 begin
   Result := False;
   hInet := InternetOpen('PlaintoolDownloader', INTERNET_OPEN_TYPE_PRECONFIG, nil, nil, 0);
   if hInet = nil then
     Exit;
   try
+    // Apply connect and IO timeouts to avoid hanging on dead network
+    InternetSetOption(hInet, INTERNET_OPTION_CONNECT_TIMEOUT, @timeout, SizeOf(timeout));
+    InternetSetOption(hInet, INTERNET_OPTION_SEND_TIMEOUT, @timeout, SizeOf(timeout));
+    InternetSetOption(hInet, INTERNET_OPTION_RECEIVE_TIMEOUT, @timeout, SizeOf(timeout));
     hUrl := InternetOpenUrl(hInet, PChar(AUrl), nil, 0,
                            INTERNET_FLAG_RELOAD or INTERNET_FLAG_SECURE or
+                           INTERNET_FLAG_NO_UI or
                            INTERNET_FLAG_EXISTING_CONNECT, 0);
     if hUrl = nil then
       Exit;
@@ -178,6 +184,10 @@ begin
     Process.Parameters.Add('-s');
     Process.Parameters.Add('-f');
     Process.Parameters.Add('-L');
+    Process.Parameters.Add('--connect-timeout');
+    Process.Parameters.Add('10');
+    Process.Parameters.Add('--max-time');
+    Process.Parameters.Add('30');
     Process.Parameters.Add('-H');
     Process.Parameters.Add('User-Agent: PlaintoolDownloader');
     Process.Parameters.Add(AUrl);
@@ -210,6 +220,8 @@ begin
     Process.Parameters.Add('-q');
     Process.Parameters.Add('-O');
     Process.Parameters.Add('-');
+    Process.Parameters.Add('--timeout=10');
+    Process.Parameters.Add('--tries=1');
     Process.Parameters.Add('--header=User-Agent: PlaintoolDownloader');
     Process.Parameters.Add(AUrl);
     Process.Options := [poUsePipes, poNoConsole];
