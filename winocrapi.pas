@@ -1531,10 +1531,23 @@ end;
 
 function TWinOcrDirect.TryRecognizeScreenRegionWithAction(const LanguageTag: string; const ActionCaptions: TStringArray;
   out Text: string; out ActionIndex: integer; out ErrorMessage: string): boolean;
+const
+  // Pixels added around the selection so OCR sees complete glyph shapes
+  ContextPad = 8;
+
+  // Crops shorter than this are upscaled to help the OCR engine
+  UpscaleThreshold = 80;
+
+  // Integer zoom factors applied to small and medium crops
+  UpscaleSmallFactor = 3;
+  UpscaleMediumFactor = 2;
 var
   SelForm: TScreenSelectForm = nil;
   Crop: TBitmap = nil;
+  ScaledCrop: TBitmap = nil;
   TempImage: string = '';
+  PadRect: TRect;
+  ScaleFactor: integer = 1;
 begin
   Result := False;
   Text := '';
@@ -1544,6 +1557,7 @@ begin
 
   SelForm := nil;
   Crop := nil;
+  ScaledCrop := nil;
   TempImage := '';
 
   if not IsWinRtAvailable then
@@ -1572,14 +1586,55 @@ begin
       Exit;
     end;
 
+    // Expand the selection to include full glyphs and give OCR some margin
+    PadRect := SelForm.SelectionRect;
+    if PadRect.Left < ContextPad then
+      PadRect.Left := 0
+    else
+      PadRect.Left := PadRect.Left - ContextPad;
+    if PadRect.Top < ContextPad then
+      PadRect.Top := 0
+    else
+      PadRect.Top := PadRect.Top - ContextPad;
+    if PadRect.Right + ContextPad > SelForm.Bitmap.Width then
+      PadRect.Right := SelForm.Bitmap.Width
+    else
+      PadRect.Right := PadRect.Right + ContextPad;
+    if PadRect.Bottom + ContextPad > SelForm.Bitmap.Height then
+      PadRect.Bottom := SelForm.Bitmap.Height
+    else
+      PadRect.Bottom := PadRect.Bottom + ContextPad;
+
     Crop := TBitmap.Create;
     Crop.PixelFormat := pf32bit;
-    Crop.Width := SelForm.SelectionRect.Right - SelForm.SelectionRect.Left;
-    Crop.Height := SelForm.SelectionRect.Bottom - SelForm.SelectionRect.Top;
+    Crop.Width := PadRect.Right - PadRect.Left;
+    Crop.Height := PadRect.Bottom - PadRect.Top;
     Crop.Canvas.CopyRect(
       Types.Rect(0, 0, Crop.Width, Crop.Height),
       SelForm.Bitmap.Canvas,
-      SelForm.SelectionRect);
+      PadRect);
+
+    // Upscale short crops so a single line of text has enough pixels for OCR
+    if Crop.Height < UpscaleThreshold then
+    begin
+      if Crop.Height < UpscaleThreshold div 2 then
+        ScaleFactor := UpscaleSmallFactor
+      else
+        ScaleFactor := UpscaleMediumFactor;
+    end;
+
+    if ScaleFactor > 1 then
+    begin
+      ScaledCrop := TBitmap.Create;
+      ScaledCrop.PixelFormat := pf32bit;
+      ScaledCrop.Width := Crop.Width * ScaleFactor;
+      ScaledCrop.Height := Crop.Height * ScaleFactor;
+      ScaledCrop.Canvas.StretchDraw(
+        Types.Rect(0, 0, ScaledCrop.Width, ScaledCrop.Height), Crop);
+      Crop.Free;
+      Crop := ScaledCrop;
+      ScaledCrop := nil;
+    end;
 
     TempImage := MakeTempPath('qt_ocr_screen_', '.bmp');
     Crop.SaveToFile(TempImage);
@@ -1588,6 +1643,7 @@ begin
   finally
     if (TempImage <> '') and FileExists(TempImage) then
       SysUtils.DeleteFile(TempImage);
+    ScaledCrop.Free;
     Crop.Free;
     SelForm.Free;
   end;
