@@ -87,10 +87,17 @@ SOFTWARE.
         <Filename Value="downloader.pas"/>
         <UnitName Value="downloader"/>
       </Item>
+      <Item>
+        <Filename Value="winocrapi.pas"/>
+        <UnitName Value="WinOCRApi"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
         <PackageName Value="LCLBase"/>
+      </Item>
+      <Item>
+        <PackageName Value="helpers"/>
       </Item>
     </RequiredPkgs>
     <UsageOptions>
