@@ -1042,7 +1042,9 @@ var
 begin
   Step := DashLen + GapLen;
   Canvas.Brush.Style := bsClear;
-  Canvas.Pen.Color := $00808080;
+  // Inverted border stays visible on any background color
+  Canvas.Pen.Color := clWhite;
+  Canvas.Pen.Mode := pmXor;
   Canvas.Pen.Width := 2;
   Canvas.Pen.Style := psSolid;
 
