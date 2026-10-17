@@ -841,6 +841,9 @@ begin
   end;
 end;
 
+const
+  WM_CLEAR_SELECTION_IF_IDLE = WM_APP + 1;
+
 type
   // Full-screen form that shows the captured screen and lets the user drag a rectangle
   TScreenSelectForm = class(TForm)
@@ -865,6 +868,7 @@ type
     procedure FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: integer);
     procedure FormMouseUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: integer);
     procedure FormKeyDown(Sender: TObject; var Key: word; Shift: TShiftState);
+    procedure WMClearSelectionIfIdle(var Msg: TMessage); message WM_CLEAR_SELECTION_IF_IDLE;
   public
     // ActionCaptions defines the popup items; pass nil for no menu
     constructor CreateFullScreen(const ActionCaptions: TStringArray);
@@ -1102,7 +1106,8 @@ begin
   // Dimmed screenshot as the backdrop
   Canvas.Draw(0, 0, FDimmedBitmap);
 
-  if FSelecting and (FSelectionRect.Right > FSelectionRect.Left) and (FSelectionRect.Bottom > FSelectionRect.Top) then
+  // Keep the selection visible until a new one starts or the form closes
+  if (FSelectionRect.Right > FSelectionRect.Left) and (FSelectionRect.Bottom > FSelectionRect.Top) then
   begin
     // Restore the original colors inside the selection area
     Canvas.CopyMode := cmSrcCopy;
@@ -1166,6 +1171,20 @@ begin
   end;
 end;
 
+// Runs after any pending menu command; clears the region only if nothing was picked
+procedure TScreenSelectForm.WMClearSelectionIfIdle(var Msg: TMessage);
+begin
+  Msg.Result := 0;
+  // Valid item was picked or form is closing, keep the region intact
+  if FDone or (ModalResult <> mrNone) then Exit;
+  // Nothing to clear
+  if FSelectionRect.Right <= FSelectionRect.Left then Exit;
+  if FSelectionRect.Bottom <= FSelectionRect.Top then Exit;
+  // Menu dismissed (Esc or outside click), drop the region
+  FSelectionRect := Types.Rect(0, 0, 0, 0);
+  Invalidate;
+end;
+
 // Pops up the action menu at the mouse release point without closing the form
 procedure TScreenSelectForm.ShowActionMenu;
 var
@@ -1175,6 +1194,8 @@ begin
   ScreenPt := ClientToScreen(Types.Point(FEndPoint.X, FEndPoint.Y));
   // Popup runs its own loop and fires PopupItemClick on selection
   FActionMenu.Popup(ScreenPt.X, ScreenPt.Y);
+  // Defer clearing so any pending item click is processed first
+  PostMessage(Handle, WM_CLEAR_SELECTION_IF_IDLE, 0, 0);
 end;
 
 // Records the chosen popup item and closes the form right away
