@@ -1,0 +1,498 @@
+//-----------------------------------------------------------------------------------
+//  Toolkit Package © 2026 by Alexander Tverskoy
+//  Licensed under the MIT License
+//  You may obtain a copy of the License at https://opensource.org/licenses/MIT
+//-----------------------------------------------------------------------------------
+
+unit checkupdates;
+
+{$mode ObjFPC}{$H+}
+
+interface
+
+uses
+  Forms,
+  Classes,
+  Controls,
+  SysUtils,
+  Dialogs,
+  FileInfo,
+  LCLIntf,
+  fphttpclient,
+  openssl,
+  opensslsockets,
+  {$IFDEF WINDOWS}
+  wininet,
+  {$ENDIF}
+  {$IFDEF Linux}
+  Unix,
+  Process,
+  {$ENDIF}
+  {$IFDEF MacOS}
+  MacOSAll,
+  Process,
+  {$ENDIF}
+  fpjson,
+  LResources;
+
+type
+  TCheckUpdateThread = class(TThread)
+  private
+    FRepo: string;       // GitHub repository (e.g. 'user/repo')
+    FAppName: string;    // Application name for dialog captions
+    FLatestVersion: string;
+  protected
+    procedure Execute; override;
+    procedure UpdateAvailable;
+  public
+    // Pass all required parameters through the constructor
+    constructor Create(const ARepo, AAppName: string; CreateSuspended: boolean = True);
+    destructor Destroy; override;
+  end;
+
+{ Check Github Version }
+// Added AppName parameter to avoid global 'rappname' dependency.
+// When Silent = True, AppName is not used and can be empty.
+function CheckGithubLatestVersion(out Version: string; const Repo: string; const AppName: string; const Silent: boolean = False): boolean;
+
+function GetAppVersion: string;
+function IsSSLAvailable: boolean;
+procedure StartUpdateCheck(const ARepo, AAppName: string);
+
+var
+  _SSLChecked: boolean = False;
+  _SSLAvailable: boolean = False;
+
+  ActiveThreads: TFPList = nil;
+
+resourcestring
+  newversion = 'New version available: %s. Open GitHub page to download?';
+  newversionuptodate = 'Your version is up to date.';
+  newversioncheckerror = 'Error checking version:';
+
+implementation
+
+{%Region -fold Methods}
+
+function GetAppVersion: string;
+var
+  Info: TFileVersionInfo;
+begin
+  Info := TFileVersionInfo.Create(nil);
+  try
+    Info.FileName := ParamStr(0);
+    Info.ReadFileInfo;
+    Result := Info.VersionStrings.Values['ProductVersion'];
+  finally
+    Info.Free;
+  end;
+end;
+
+function IsSSLAvailable: boolean;
+begin
+  if not _SSLChecked then
+  begin
+    try
+      // InitSSLInterface returns True if OpenSSL libraries loaded successfully
+      _SSLAvailable := InitSSLInterface;
+    except
+      _SSLAvailable := False;
+    end;
+    _SSLChecked := True;
+  end;
+  Result := _SSLAvailable;
+end;
+
+procedure StartUpdateCheck(const ARepo, AAppName: string);
+begin
+  // Skip launching when the application is already shutting down, otherwise
+  // the thread may try to Synchronize on a destroyed form
+  if Application.Terminated then
+    Exit;
+
+  // Create and forget: the unit owns every thread through the ActiveThreads
+  // list and waits for them in finalization, so the caller needs no tracking
+  TCheckUpdateThread.Create(ARepo, AAppName, False);
+end;
+
+{%EndRegion}
+
+{%Region -fold CheckUpdateThread}
+
+constructor TCheckUpdateThread.Create(const ARepo, AAppName: string; CreateSuspended: boolean);
+begin
+  inherited Create(CreateSuspended);
+  FRepo := ARepo;
+  FAppName := AAppName;
+  // Keep the original behaviour so callers do not need to change
+  FreeOnTerminate := True;
+  if not Assigned(ActiveThreads) then
+    ActiveThreads := TFPList.Create;
+  ActiveThreads.Add(Self);
+end;
+
+destructor TCheckUpdateThread.Destroy;
+begin
+  if Assigned(ActiveThreads) then
+    ActiveThreads.Remove(Self);
+  inherited;
+end;
+
+procedure TCheckUpdateThread.Execute;
+begin
+  // Use fields instead of global REPO
+  if CheckGithubLatestVersion(FLatestVersion, FRepo, '', True) then
+  begin
+    // Do not touch the main thread if the application is shutting down
+    if Terminated then
+      Exit;
+    Synchronize(@UpdateAvailable);
+  end;
+end;
+
+procedure TCheckUpdateThread.UpdateAvailable;
+begin
+  // Use fields instead of global rappname and REPO
+  if MessageDlg(FAppName, Format(newversion, [FLatestVersion]), mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+    OpenURL(Format('https://github.com/%s/releases/latest', [FRepo]));
+end;
+
+{%EndRegion}
+
+{%Region -fold Check Github Version}
+
+function CheckGithubLatestVersion(out Version: string; const Repo: string; const AppName: string; const Silent: boolean = False): boolean;
+var
+  JsonData: TJSONData;
+  LatestVersion, Msg: string;
+  Url: string;
+  CurrentVersion: string;
+  ResponseContent: string;
+  ErrorMsg: string;
+
+{$IFDEF WINDOWS}
+
+  function HttpGetWinInet(const AUrl: string): string;
+  var
+    hInet, hUrl: HINTERNET;
+    Buffer: array[0..4095] of Char;
+    BytesRead: DWORD = 0;
+    I: Integer;
+  begin
+    for I := 0 to High(Buffer) do
+      Buffer[I] := #0;
+
+    Result := '';
+    hInet := InternetOpen('PlaintoolVersionChecker', INTERNET_OPEN_TYPE_PRECONFIG, nil, nil, 0);
+    if hInet = nil then
+      Exit;
+
+    try
+      hUrl := InternetOpenUrl(hInet, PChar(AUrl), nil, 0,
+                             INTERNET_FLAG_RELOAD or INTERNET_FLAG_SECURE or
+                             INTERNET_FLAG_EXISTING_CONNECT, 0);
+      if hUrl = nil then
+        Exit;
+
+      try
+        while InternetReadFile(hUrl, @Buffer, SizeOf(Buffer), BytesRead) and (BytesRead > 0) do
+        begin
+          Result := Result + Copy(Buffer, 1, BytesRead);
+        end;
+      finally
+        InternetCloseHandle(hUrl);
+      end;
+    finally
+      InternetCloseHandle(hInet);
+    end;
+  end;
+
+  function HttpClientGet(const AUrl: string): string;
+  var
+    HttpClient: TFPHTTPClient;
+  begin
+    if AUrl.StartsWith('https://', True) and not IsSSLAvailable then
+      Exit(string.Empty);
+
+    try
+      HttpClient := TFPHTTPClient.Create(nil);
+      try
+        HttpClient.AddHeader('User-Agent', 'PlaintoolVersionChecker');
+        HttpClient.AllowRedirect := True;
+        HttpClient.ConnectTimeout := 5000;
+        HttpClient.IOTimeout := 5000;
+        Result := HttpClient.Get(AUrl);
+      finally
+        HttpClient.Free;
+      end;
+    except
+      Result := string.Empty;
+    end;
+  end;
+
+{$ELSE}
+
+  function HttpGetCurl(const AUrl: string): string;
+  var
+    Process: TProcess;
+    OutputStream: TMemoryStream;
+    BytesRead: longint;
+    Buffer: TBytes = nil;
+    OutputString: ansistring = '';
+  begin
+    Result := '';
+    SetLength(Buffer, 2048);
+    Process := TProcess.Create(nil);
+    OutputStream := TMemoryStream.Create;
+    try
+      Process.Executable := 'curl';
+      Process.Parameters.Add('-s');
+      Process.Parameters.Add('-L');
+      Process.Parameters.Add('-H');
+      Process.Parameters.Add('User-Agent: PlaintoolVersionChecker');
+      Process.Parameters.Add(AUrl);
+
+      Process.Options := [poUsePipes, poNoConsole];
+      Process.Execute;
+
+      while Process.Running or (Process.Output.NumBytesAvailable > 0) do
+      begin
+        BytesRead := Process.Output.Read(Buffer[0], Length(Buffer));
+        if BytesRead > 0 then
+          OutputStream.Write(Buffer[1], BytesRead);
+      end;
+
+      Process.WaitOnExit;
+
+      if OutputStream.Size > 0 then
+      begin
+        SetLength(OutputString, OutputStream.Size);
+        OutputStream.Position := 0;
+        OutputStream.Read(OutputString[1], OutputStream.Size);
+        Result := string(OutputString);
+      end;
+    finally
+      OutputStream.Free;
+      Process.Free;
+    end;
+  end;
+
+  function IsCurlAvailable: boolean;
+  var
+    Process: TProcess;
+    ExitStatus: integer;
+  begin
+    Result := False;
+    Process := TProcess.Create(nil);
+    try
+      Process.Executable := 'curl';
+      Process.Parameters.Add('--version');
+      Process.Options := [poWaitOnExit, poNoConsole, poUsePipes];
+      Process.ShowWindow := swoHIDE;
+
+      try
+        Process.Execute;
+        Process.WaitOnExit;
+        ExitStatus := Process.ExitStatus;
+        Result := (ExitStatus = 0);
+      except
+        on E: EProcess do
+          Result := False;
+        on E: Exception do
+          Result := False;
+      end;
+    finally
+      Process.Free;
+    end;
+  end;
+
+  function HttpGetWget(const AUrl: string): string;
+  var
+    Process: TProcess;
+    OutputStream: TMemoryStream;
+    BytesRead: longint;
+    Buffer: TBytes = ();
+  begin
+    Result := '';
+    SetLength(Buffer, 2048);
+    Process := TProcess.Create(nil);
+    OutputStream := TMemoryStream.Create;
+    try
+      Process.Executable := 'wget';
+      Process.Parameters.Add('-q');
+      Process.Parameters.Add('-O');
+      Process.Parameters.Add('-');
+      Process.Parameters.Add('--header=User-Agent: PlaintoolVersionChecker');
+      Process.Parameters.Add(AUrl);
+
+      Process.Options := [poUsePipes, poNoConsole];
+      Process.Execute;
+
+      while Process.Running or (Process.Output.NumBytesAvailable > 0) do
+      begin
+        BytesRead := Process.Output.Read(Buffer[0], Length(Buffer));
+        if BytesRead > 0 then
+          OutputStream.Write(Buffer[0], BytesRead);
+      end;
+
+      Process.WaitOnExit;
+
+      if OutputStream.Size > 0 then
+      begin
+        SetLength(Result, OutputStream.Size);
+        OutputStream.Position := 0;
+        OutputStream.Read(Result[1], OutputStream.Size);
+      end;
+    finally
+      OutputStream.Free;
+      Process.Free;
+    end;
+  end;
+
+  function IsWgetAvailable: boolean;
+  var
+    Process: TProcess;
+  begin
+    Result := False;
+    Process := TProcess.Create(nil);
+    try
+      Process.Executable := 'wget';
+      Process.Parameters.Add('--version');
+      Process.Options := [poWaitOnExit, poNoConsole];
+      try
+        Process.Execute;
+        Process.WaitOnExit;
+        Result := (Process.ExitStatus = 0);
+      except
+        Result := False;
+      end;
+    finally
+      Process.Free;
+    end;
+  end;
+
+{$ENDIF}
+begin
+  Result := False;
+  Version := string.Empty;
+  try
+    CurrentVersion := GetAppVersion;
+    Url := Format('https://api.github.com/repos/%s/releases/latest', [Repo]);
+
+    {$IFDEF WINDOWS}
+    ResponseContent := HttpClientGet(Url);
+    if ResponseContent = string.Empty then
+      ResponseContent := HttpGetWinInet(Url);
+    {$ELSE}
+    try
+      with TFPHttpClient.Create(nil) do
+      try
+        AddHeader('User-Agent', 'PlaintoolVersionChecker');
+        ResponseContent := Get(Url);
+      finally
+        Free;
+      end;
+    except
+      on E: Exception do
+      begin
+        if IsCurlAvailable then
+        begin
+          ResponseContent := HttpGetCurl(Url);
+        end
+        else if IsWgetAvailable then
+        begin
+          ResponseContent := HttpGetWget(Url);
+        end
+        else
+        begin
+          if not Silent then
+            ShowMessage(newversioncheckerror + ' ' + 'Please install OpenSSL, curl or wget library!');
+          Exit;
+        end;
+      end;
+    end;
+    {$ENDIF}
+
+    if ResponseContent <> string.Empty then
+    begin
+      JsonData := GetJSON(ResponseContent);
+      try
+        if JsonData.FindPath('tag_name') = nil then
+        begin
+          try
+            ErrorMsg := JsonData.GetPath('message').AsString;
+            if not Silent then
+            begin
+              if ErrorMsg <> string.Empty then
+                ShowMessage(newversioncheckerror + LineEnding + Url + LineEnding + 'GitHub API: ' + ErrorMsg)
+              else
+                ShowMessage(newversioncheckerror + LineEnding + Url);
+            end;
+          except
+            if not Silent then
+              ShowMessage(newversioncheckerror + LineEnding + Url);
+          end;
+          Exit;
+        end;
+
+        LatestVersion := JsonData.GetPath('tag_name').AsString;
+
+        if AnsiLowerCase(StringReplace(LatestVersion, 'v', '', [rfReplaceAll])) <> AnsiLowerCase(
+          StringReplace(CurrentVersion, 'v', '', [rfReplaceAll])) then
+        begin
+          Version := LatestVersion;
+          if not Silent then
+          begin
+            Msg := Format(newversion, [LatestVersion]);
+            // Use the passed AppName instead of global rappname
+            if MessageDlg(AppName, Msg, mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+              OpenURL(Format('https://github.com/%s/releases/latest', [Repo]));
+          end;
+          Result := True;
+        end
+        else
+        begin
+          if not Silent then
+            ShowMessage(newversionuptodate);
+        end;
+      finally
+        JsonData.Free;
+      end;
+    end
+    else
+    begin
+      if not Silent then
+        ShowMessage(newversioncheckerror + LineEnding + Url);
+    end;
+  except
+    on E: Exception do
+    begin
+      Result := False;
+      if not Silent then
+        ShowMessage(newversioncheckerror + LineEnding + Url + LineEnding + E.Message);
+    end;
+  end;
+end;
+
+{%EndRegion}
+
+initialization
+
+  {$I toolkit.lrs}
+
+finalization
+  // Wait for every running update thread before the unit unloads, otherwise
+  // a thread may still call Synchronize on a destroyed form or leak at exit
+  if Assigned(ActiveThreads) then
+  begin
+    while ActiveThreads.Count > 0 do
+    begin
+      TCheckUpdateThread(ActiveThreads[0]).Terminate;
+      TCheckUpdateThread(ActiveThreads[0]).WaitFor;
+      // Thread frees itself because FreeOnTerminate is True, and its
+      // destructor removes it from ActiveThreads, so the loop eventually ends
+    end;
+    FreeAndNil(ActiveThreads);
+  end;
+
+end.
