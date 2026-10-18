@@ -4,7 +4,7 @@
 //  You may obtain a copy of the License at https://opensource.org/licenses/MIT
 //-----------------------------------------------------------------------------------
 
-unit checkupdates;
+unit CheckUpdates;
 
 {$mode ObjFPC}{$H+}
 

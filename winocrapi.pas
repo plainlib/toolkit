@@ -179,7 +179,7 @@ implementation
 {$IFDEF WINDOWS}
 
 uses
-  Forms, Controls, Graphics, osutils;
+  Forms, Controls, Graphics, OSUtils;
 
 type
   // WinRT entry point signatures, resolved dynamically from system DLLs
