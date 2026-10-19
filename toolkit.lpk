@@ -8,6 +8,8 @@
       <Version Value="11"/>
       <PathDelim Value="\"/>
       <SearchPaths>
+        <IncludeFiles Value="src"/>
+        <OtherUnitFiles Value="src"/>
         <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
       <Linking>
@@ -47,53 +49,53 @@ SOFTWARE.
     <Version Major="1"/>
     <Files>
       <Item>
-        <Filename Value="globalkeyboardhook.pas"/>
+        <Filename Value="src\globalkeyboardhook.pas"/>
         <UnitName Value="GlobalKeyboardHook"/>
       </Item>
       <Item>
-        <Filename Value="globalmousehook.pas"/>
+        <Filename Value="src\globalmousehook.pas"/>
         <UnitName Value="GlobalMouseHook"/>
       </Item>
       <Item>
-        <Filename Value="oneshottimer.pas"/>
+        <Filename Value="src\oneshottimer.pas"/>
         <UnitName Value="OneShotTimer"/>
       </Item>
       <Item>
-        <Filename Value="textdroptarget.pas"/>
+        <Filename Value="src\textdroptarget.pas"/>
         <HasRegisterProc Value="True"/>
         <UnitName Value="TextDropTarget"/>
       </Item>
       <Item>
-        <Filename Value="mathparser.pas"/>
+        <Filename Value="src\mathparser.pas"/>
         <UnitName Value="mathparser"/>
       </Item>
       <Item>
-        <Filename Value="oneshothint.pas"/>
+        <Filename Value="src\oneshothint.pas"/>
         <UnitName Value="OneShotHint"/>
       </Item>
       <Item>
-        <Filename Value="oneshottooltip.pas"/>
+        <Filename Value="src\oneshottooltip.pas"/>
         <UnitName Value="OneShotTooltip"/>
       </Item>
       <Item>
-        <Filename Value="appinstance.pas"/>
+        <Filename Value="src\appinstance.pas"/>
         <UnitName Value="appinstance"/>
       </Item>
       <Item>
-        <Filename Value="oneshotthread.pas"/>
+        <Filename Value="src\oneshotthread.pas"/>
         <UnitName Value="oneshotthread"/>
       </Item>
       <Item>
-        <Filename Value="downloader.pas"/>
+        <Filename Value="src\checkupdates.pas"/>
+        <UnitName Value="checkupdates"/>
+      </Item>
+      <Item>
+        <Filename Value="src\downloader.pas"/>
         <UnitName Value="downloader"/>
       </Item>
       <Item>
-        <Filename Value="winocrapi.pas"/>
+        <Filename Value="src\winocrapi.pas"/>
         <UnitName Value="WinOCRApi"/>
-      </Item>
-      <Item>
-        <Filename Value="checkupdates.pas"/>
-        <UnitName Value="checkupdates"/>
       </Item>
     </Files>
     <i18n>

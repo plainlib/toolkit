@@ -10,7 +10,7 @@ interface
 uses
   GlobalKeyboardHook, GlobalMouseHook, OneShotTimer, TextDropTarget, 
   MathParser, OneShotHint, OneShotTooltip, AppInstance, OneShotThread, 
-  Downloader, WinOCRApi, CheckUpdates;
+  CheckUpdates, Downloader, WinOCRApi;
 
 implementation
 
