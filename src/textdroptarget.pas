@@ -492,9 +492,13 @@ begin
   if FRegisteredHandle = FTarget.Handle then
     Exit;
 
-  UnregisterTarget;
+   UnregisterTarget;
 
   FImpl := TTextDropTargetImpl.Create(Self, FTarget);
+
+  // The Richedit registers itself as drop target on handle creation, so
+  // revoke that before registering our own handler
+  RevokeDragDrop(FTarget.Handle);
 
   OleCheck(
     RegisterDragDrop(FTarget.Handle, FImpl)
