@@ -1164,9 +1164,15 @@ begin
   end
   else
   begin
-    // Selection too small, reset and let the user try again
-    FSelectionRect := Types.Rect(0, 0, 0, 0);
-    Invalidate;
+    // Show the action menu even without a selection so the user can cancel
+    if FActionMenu <> nil then
+      ShowActionMenu
+    else
+    begin
+      // Selection too small, reset and let the user try again
+      FSelectionRect := Types.Rect(0, 0, 0, 0);
+      Invalidate;
+    end;
   end;
 end;
 
@@ -1591,6 +1597,14 @@ begin
     begin
       ErrorMessage := 'No action selected';
       FLastError := ErrorMessage;
+      Exit;
+    end;
+
+    // No region selected, skip OCR so the caller can handle cancel immediately
+    if (SelForm.SelectionRect.Right <= SelForm.SelectionRect.Left) or
+       (SelForm.SelectionRect.Bottom <= SelForm.SelectionRect.Top) then
+    begin
+      Result := True;
       Exit;
     end;
 
